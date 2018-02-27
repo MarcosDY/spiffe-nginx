@@ -753,7 +753,7 @@ ngx_ssl_spiffe_id_verification(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_array_t *acce
     // Validate SAN is URI type
     //
     if (sanName->type != GEN_URI) {
-        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0,
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ssl->log, 0,
                         "SAN must be URI type");
         return NGX_ERROR;
     }
