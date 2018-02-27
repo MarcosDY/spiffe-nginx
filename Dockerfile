@@ -1,8 +1,9 @@
 FROM ubuntu:xenial
 
 RUN apt-get update && apt-get -y install \
-    curl unzip git build-essential autoconf automake dh-autoreconf libtool pkg-config libssl-dev g++
+    curl unzip git build-essential autoconf automake dh-autoreconf libtool pkg-config g++
+
 WORKDIR /opt/nginx-dev
 
-COPY build_nginx.sh .
-RUN ./build_nginx.sh
+COPY vendor.sh /
+RUN /bin/bash -x /vendor.sh
