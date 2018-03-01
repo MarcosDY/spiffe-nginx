@@ -232,13 +232,13 @@ static ngx_command_t  ngx_http_ssl_commands[] = {
       ngx_conf_set_flag_slot,
       NGX_HTTP_SRV_CONF_OFFSET,
       offsetof(ngx_http_ssl_srv_conf_t, stapling_verify),
-      NULL },  
-    { ngx_string("ssl_spiffe_sock"),
-        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
-        ngx_conf_set_str_slot,
-        NGX_HTTP_SRV_CONF_OFFSET,
-        offsetof(ngx_http_ssl_srv_conf_t, ssl_spiffe_sock),
-        NULL },
+      NULL },     
+    { ngx_string("ssl_spiffe"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_FLAG,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_SRV_CONF_OFFSET,
+      offsetof(ngx_http_ssl_srv_conf_t, ssl_spiffe),
+      NULL },
 	{ ngx_string("ssl_spiffe_accept"),
         NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|(NGX_CONF_TAKE1|NGX_CONF_TAKE2|NGX_CONF_TAKE3   \
                               |NGX_CONF_TAKE4|NGX_CONF_TAKE5|NGX_CONF_TAKE6|NGX_CONF_TAKE7),
@@ -555,7 +555,7 @@ ngx_http_ssl_create_srv_conf(ngx_conf_t *cf)
      *     sscf->ciphers = { 0, NULL };
      *     sscf->shm_zone = NULL;
      *     sscf->stapling_file = { 0, NULL };
-     *     sscf->stapling_responder = { 0, NULL };
+     *     sscf->stapling_responder = { 0, NULL }; 
      */
 
     sscf->enable = NGX_CONF_UNSET;
@@ -572,6 +572,7 @@ ngx_http_ssl_create_srv_conf(ngx_conf_t *cf)
     sscf->session_ticket_keys = NGX_CONF_UNSET_PTR;
     sscf->stapling = NGX_CONF_UNSET;
     sscf->stapling_verify = NGX_CONF_UNSET;
+    sscf->ssl_spiffe = NGX_CONF_UNSET;
     sscf->ssl_spiffe_accept = NGX_CONF_UNSET_PTR;
 
     return sscf;
@@ -612,10 +613,10 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 
     ngx_conf_merge_uint_value(conf->verify, prev->verify, 0);
 
-    ngx_conf_merge_str_value(conf->ssl_spiffe_sock,
-                              prev->ssl_spiffe_sock, "");
+    ngx_conf_merge_value(conf->ssl_spiffe, 
+                         prev->ssl_spiffe, 0);
     ngx_conf_merge_ptr_value(conf->ssl_spiffe_accept,
-                              prev->ssl_spiffe_accept, NULL);
+                         prev->ssl_spiffe_accept, NULL);
 
     ngx_conf_merge_uint_value(conf->verify_depth, prev->verify_depth, 1);
 
@@ -763,7 +764,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 
     // verify if spiffe sock is enabled
     //
-    if (conf->ssl_spiffe_sock.len != 0) {
+    if (conf->ssl_spiffe) {
         // validate certificate
         if (ngx_ssl_spiffe_id_verification(cf, &conf->ssl,
                                        conf->ssl_spiffe_accept)                                       

@@ -672,12 +672,12 @@ static ngx_command_t  ngx_http_proxy_commands[] = {
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_proxy_loc_conf_t, upstream.ssl_verify),
       NULL },
-    { ngx_string("proxy_ssl_spiffe_sock"),
-        NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
-        ngx_conf_set_str_slot,
-        NGX_HTTP_LOC_CONF_OFFSET,
-        offsetof(ngx_http_proxy_loc_conf_t, upstream.ssl_spiffe_sock),
-        NULL },
+    { ngx_string("proxy_ssl_spiffe"),
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_proxy_loc_conf_t, upstream.ssl_spiffe),
+      NULL }, 
 	{ ngx_string("proxy_ssl_spiffe_accept"),
         NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF| NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|(NGX_CONF_TAKE1|NGX_CONF_TAKE2|NGX_CONF_TAKE3   \
                               |NGX_CONF_TAKE4|NGX_CONF_TAKE5|NGX_CONF_TAKE6|NGX_CONF_TAKE7),
@@ -2917,6 +2917,7 @@ ngx_http_proxy_create_loc_conf(ngx_conf_t *cf)
     conf->upstream.ssl_session_reuse = NGX_CONF_UNSET;
     conf->upstream.ssl_server_name = NGX_CONF_UNSET;
     conf->upstream.ssl_verify = NGX_CONF_UNSET;
+    conf->upstream.ssl_spiffe = NGX_CONF_UNSET;    
     conf->upstream.ssl_spiffe_accept = NGX_CONF_UNSET_PTR;    
     conf->ssl_verify_depth = NGX_CONF_UNSET_UINT;
     conf->ssl_passwords = NGX_CONF_UNSET_PTR;    
@@ -3250,8 +3251,8 @@ ngx_http_proxy_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_value(conf->upstream.ssl_verify,
                               prev->upstream.ssl_verify, 0);
 
-    ngx_conf_merge_str_value(conf->upstream.ssl_spiffe_sock,
-                              prev->upstream.ssl_spiffe_sock, "");
+    ngx_conf_merge_value(conf->upstream.ssl_spiffe,
+                              prev->upstream.ssl_spiffe, 0);
     ngx_conf_merge_ptr_value(conf->upstream.ssl_spiffe_accept,
                               prev->upstream.ssl_spiffe_accept, NULL);
 

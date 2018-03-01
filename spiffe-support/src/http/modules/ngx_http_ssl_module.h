@@ -59,8 +59,7 @@ typedef struct {
     ngx_uint_t                      line;
 
     ngx_flag_t 						ssl_spiffe;
-    ngx_str_t						ssl_spiffe_sock;
-    ngx_array_t 				    *ssl_spiffe_accept;
+    ngx_array_t 				   *ssl_spiffe_accept;
 } ngx_http_ssl_srv_conf_t;
 
 
