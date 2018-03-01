@@ -1725,7 +1725,7 @@ ngx_http_upstream_ssl_handshake(ngx_http_request_t *r, ngx_http_upstream_t *u,
     if (c->ssl->handshaked) {
         // verify if spiffe validation is enabled
         //
-        if (u->conf->ssl_spiffe_sock.len != 0) {  
+        if (u->conf->ssl_spiffe) {  
             // verify SPIFFE ID using accepted list
             if (ngx_ssl_check_spiffe_id(c, u->conf->ssl_spiffe_accept)                                       
                 != NGX_OK)
@@ -1744,7 +1744,7 @@ ngx_http_upstream_ssl_handshake(ngx_http_request_t *r, ngx_http_upstream_t *u,
                 goto failed;
             }
 
-            if (u->conf->ssl_spiffe_sock.len == 0 &&
+            if (!u->conf->ssl_spiffe &&
                 ngx_ssl_check_host(c, &u->ssl_name) != NGX_OK) {
 
                 ngx_log_error(NGX_LOG_ERR, c->log, 0,
