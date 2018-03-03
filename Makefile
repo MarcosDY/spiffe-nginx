@@ -1,5 +1,5 @@
 
-docker = docker run -v $(docker_volume) -it $(docker_image)
+docker = docker run -v $(docker_volume) -p 80:80 -it $(docker_image)
 docker_volume := $(shell echo $${PWD}):/opt/nginx-dev
 docker_image = spiffe-nginx:latest
 

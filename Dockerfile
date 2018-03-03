@@ -1,4 +1,4 @@
-FROM ubuntu:xenial
+FROM golang:1.9
 
 RUN apt-get update && apt-get -y install \
     curl unzip git build-essential autoconf automake dh-autoreconf libtool pkg-config g++

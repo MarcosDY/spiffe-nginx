@@ -9,7 +9,20 @@ set -e
 ngx_tar=.cache/$(basename ${NGINX_URL})
 ngx_dir=nginx-${NGINX_VERSION}
 
+build_ngx_http_fetch_spiffe_certs_module() {
+	mkdir -p /go/src/github.com/spiffe/ngx_http_fetch_spiffe_certs_module
+	cp -R /opt/nginx-dev/ngx_http_fetch_spiffe_certs_module /go/src/github.com/spiffe/
+	cd /go/src/github.com/spiffe/ngx_http_fetch_spiffe_certs_module
+	make all
+	mkdir -p /usr/local/nginx/logs
+	cd /opt/nginx-dev
+}
+
 setup_nginx() {
+	build_ngx_http_fetch_spiffe_certs_module
+	mkdir -p /usr/local/nginx/html
+	cp spiffe-support/index.html /usr/local/nginx/html
+
 	mkdir -p .cache
 	if [[ ! -r ${ngx_tar} ]]; then
 		curl --progress-bar --location --output ${ngx_tar} ${NGINX_URL}
@@ -25,10 +38,12 @@ case $1 in
 		setup_nginx
 		cd ${ngx_dir}
 		set -x
+		CFLAGS="-g -O0" \
 		./configure $_config \
 			--with-debug \
 			--with-http_ssl_module \
-			--with-stream_ssl_module
+			--with-stream_ssl_module \
+			--add-module=/go/src/github.com/spiffe/ngx_http_fetch_spiffe_certs_module
 		set +x
 		;;
 	make)
@@ -44,5 +59,3 @@ case $1 in
 		setup_nginx
 		;;
 esac
-
-
