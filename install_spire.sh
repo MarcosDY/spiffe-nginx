@@ -9,5 +9,7 @@ rm -rf ${SPIRE_DIR}
 mv -v spire-${SPIRE_VERSION} /opt/spire/
 chmod -R 777 ${SPIRE_DIR}
 mkdir ${SPIRE_DIR}/.data
+
+# Updating config files is needed in version 0.4
 cp ./spire_server.conf ${SPIRE_DIR}/conf/server/server.conf
 cp ./spire_agent.conf ${SPIRE_DIR}/conf/agent/agent.conf

@@ -56,20 +56,13 @@ static ngx_int_t ngx_http_fetch_spiffe_certs(ngx_http_ssl_spiffe_srv_conf_t *con
         return NGX_ERROR;
     }
 
-    u_char* (*fun)(u_char *, u_char *, u_char *, u_char *) = (u_char* (*)(u_char *, u_char *, u_char *, u_char *)) dlsym(go_module, "FetchSvids");
-    u_char* err = fun(conf->ssl_spiffe_sock.data,
+    int (*fun)(u_char *, u_char *, u_char *, u_char *) = (int (*)(u_char *, u_char *, u_char *, u_char *)) dlsym(go_module, "FetchSvids");
+    fun(conf->ssl_spiffe_sock.data,
                             conf->svid_file_path.data,
                             conf->svid_key_file_path.data,
                             conf->svid_bundle_file_path.data);
 
-    ngx_str_t ngx_err = { strlen(err), err };
-
-    if (ngx_err.data == "") {
-        return NGX_OK;
-    }
-    else {
-        return NGX_ERROR;
-    }
+    return NGX_OK;
 }
 
 static char * ngx_http_fetch_spiffe_certs_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)

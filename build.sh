@@ -38,7 +38,6 @@ case $1 in
 		setup_nginx
 		cd ${ngx_dir}
 		set -x
-		CFLAGS="-g -O0" \
 		./configure $_config \
 			--with-debug \
 			--with-http_ssl_module \

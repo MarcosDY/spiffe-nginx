@@ -714,7 +714,7 @@ ngx_ssl_client_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
 }
 
 ngx_int_t
-ngx_ssl_spiffe_id_verification(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_array_t *accepted)
+ngx_ssl_spiffe_id_verification(ngx_ssl_t *ssl, ngx_array_t *accepted)
 {
     int                     n;
     ngx_uint_t              i;
@@ -771,7 +771,7 @@ ngx_ssl_spiffe_id_verification(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_array_t *acce
     }
 
     ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
-                        "Spiffe id is no accepted \n");
+                        "SPIFFE ID is not accepted: \"%s\"", str->data);
     return NGX_ERROR;    
 }
 
@@ -3289,7 +3289,7 @@ ngx_ssl_check_spiffe_id(ngx_connection_t *c, ngx_array_t *accepted)
     }
 
     ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0,
-                        "Spiffe id is no accepted \n");
+                        "SPIFFE ID is not accepted.");
     goto failed;
     
 failed:
