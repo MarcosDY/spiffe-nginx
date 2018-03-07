@@ -12,7 +12,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/signal"
 	"syscall"
 	"time"
 
@@ -38,6 +37,11 @@ func FetchSvids(sockAddr *C.char,
 	svidBundleFilePath *C.char) *C.char {
 
 	workloadClient, ctx, _, err := createGrpcClient(C.GoString(sockAddr))
+	if err != nil {
+		log.Printf("error creating GRPC client: %v", err)
+		return C.CString(err.Error())
+	}
+
 	m := &fetchSpiffeCertsModule{
 		workloadClient:        workloadClient,
 		workloadClientContext: ctx,
@@ -45,20 +49,16 @@ func FetchSvids(sockAddr *C.char,
 		svidKeyFilePath:       C.GoString(svidKeyFilePath),
 		svidBundleFilePath:    C.GoString(svidBundleFilePath)}
 
+	_, err = m.dumpBundles()
 	if err != nil {
-		log.Printf("error creating GRPC client: %v", err)
+		log.Printf("error dumping bundles: %v", err)
 		return C.CString(err.Error())
 	}
-
 	go m.fetchLoop()
 	return C.CString("")
 }
 
 func (m *fetchSpiffeCertsModule) fetchLoop() {
-	// Create channel for interrupt signal
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, syscall.SIGINT, syscall.SIGTERM)
-
 	for {
 		// Fetch and dump certificates
 		ttl, err := m.dumpBundles()
@@ -77,17 +77,13 @@ func (m *fetchSpiffeCertsModule) fetchLoop() {
 		// Create timer for TTL/2
 		timer := time.NewTimer(time.Second * time.Duration(ttl/2))
 
-		// Wait for either timer or interrupt signal
+		// Wait for the timer signal
 		log.Printf("Will wait for TTL/2 (%d seconds)\n", ttl/2)
 		select {
 		case <-timer.C:
 			log.Print("Time is up! Will renew cert.\n")
 			// Continue
-		case <-interrupt:
-			log.Print("Interrupted! Will exit.\n")
-			return
 		}
-
 		err = process.Signal(syscall.SIGHUP)
 		if err != nil {
 			log.Printf("error sending signal: %v", err)

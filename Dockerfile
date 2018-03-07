@@ -1,4 +1,4 @@
-FROM golang:1.9
+FROM golang:1.10
 
 RUN apt-get update && apt-get -y install \
     curl unzip git build-essential autoconf automake dh-autoreconf libtool pkg-config g++

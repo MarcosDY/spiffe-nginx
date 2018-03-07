@@ -40,9 +40,8 @@ case $1 in
 		set -x
 		./configure $_config \
 			--with-debug \
-			--with-http_ssl_module \
-			--with-stream_ssl_module \
-			--add-module=/go/src/github.com/spiffe/ngx_http_fetch_spiffe_certs_module
+			--add-module=/go/src/github.com/spiffe/ngx_http_fetch_spiffe_certs_module \
+			--with-http_ssl_module
 		set +x
 		;;
 	make)

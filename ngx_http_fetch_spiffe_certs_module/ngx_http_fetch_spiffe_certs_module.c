@@ -7,49 +7,45 @@ typedef struct {
     ngx_str_t svid_file_path;
     ngx_str_t svid_key_file_path;
     ngx_str_t svid_bundle_file_path;
-} ngx_http_ssl_spiffe_srv_conf_t;
+} ngx_http_fetch_spiffe_certs_srv_conf_t;
 
 static ngx_command_t ngx_http_fetch_spiffe_certs_commands[] = {
     { ngx_string("ssl_spiffe_sock"),
         NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
         ngx_conf_set_str_slot,
         NGX_HTTP_SRV_CONF_OFFSET,
-        offsetof(ngx_http_ssl_spiffe_srv_conf_t, ssl_spiffe_sock),
+        offsetof(ngx_http_fetch_spiffe_certs_srv_conf_t, ssl_spiffe_sock),
         NULL },
     { ngx_string("svid_file_path"),
         NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
         ngx_conf_set_str_slot,
         NGX_HTTP_SRV_CONF_OFFSET,
-        offsetof(ngx_http_ssl_spiffe_srv_conf_t, svid_file_path),
+        offsetof(ngx_http_fetch_spiffe_certs_srv_conf_t, svid_file_path),
         NULL },
     { ngx_string("svid_key_file_path"),
         NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
         ngx_conf_set_str_slot,
         NGX_HTTP_SRV_CONF_OFFSET,
-        offsetof(ngx_http_ssl_spiffe_srv_conf_t, svid_key_file_path),
+        offsetof(ngx_http_fetch_spiffe_certs_srv_conf_t, svid_key_file_path),
         NULL },
     { ngx_string("svid_bundle_file_path"),
         NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
         ngx_conf_set_str_slot,
         NGX_HTTP_SRV_CONF_OFFSET,
-        offsetof(ngx_http_ssl_spiffe_srv_conf_t, svid_bundle_file_path),
+        offsetof(ngx_http_fetch_spiffe_certs_srv_conf_t, svid_bundle_file_path),
         NULL },
       ngx_null_command
 };
 
 static void * ngx_http_fetch_spiffe_certs_create_conf(ngx_conf_t *cf)
 {
-    ngx_http_ssl_spiffe_srv_conf_t  *scf;
+    ngx_http_fetch_spiffe_certs_srv_conf_t  *scf;
 
-    scf = ngx_pcalloc(cf->pool, sizeof(ngx_http_ssl_spiffe_srv_conf_t));
-    if (scf == NULL) {
-        return NULL;
-    }
-
+    scf = ngx_pcalloc(cf->pool, sizeof(ngx_http_fetch_spiffe_certs_srv_conf_t));
     return scf;
 }
 
-static ngx_int_t ngx_http_fetch_spiffe_certs(ngx_http_ssl_spiffe_srv_conf_t *conf) {
+static ngx_int_t ngx_http_fetch_spiffe_certs(ngx_http_fetch_spiffe_certs_srv_conf_t *conf) {
     void *go_module = dlopen("ngx_http_fetch_spiffe_certs_module.so", RTLD_LAZY);
     if (!go_module) {
         fprintf(stderr, "go module not found");
@@ -67,8 +63,8 @@ static ngx_int_t ngx_http_fetch_spiffe_certs(ngx_http_ssl_spiffe_srv_conf_t *con
 
 static char * ngx_http_fetch_spiffe_certs_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 {
-    ngx_http_ssl_spiffe_srv_conf_t *prev = parent;
-    ngx_http_ssl_spiffe_srv_conf_t *conf = child;
+    ngx_http_fetch_spiffe_certs_srv_conf_t *prev = parent;
+    ngx_http_fetch_spiffe_certs_srv_conf_t *conf = child;
 
     ngx_conf_merge_str_value(conf->ssl_spiffe_sock, prev->ssl_spiffe_sock, "");
     ngx_conf_merge_str_value(conf->svid_file_path, prev->svid_file_path, "");
