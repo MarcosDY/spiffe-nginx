@@ -3,13 +3,20 @@ extern "C" {
     #include <ngx_core.h>
     #include <ngx_http.h>
 }
+#include <thread>
 #include <csignal>
+#include <fstream>
 #include <grpc/grpc.h>
 #include <grpc++/channel.h>
 #include <grpc++/client_context.h>
 #include <grpc++/create_channel.h>
 #include <grpc++/security/credentials.h>
 #include "workload.grpc.pb.h"
+
+#include <openssl/ssl.h>
+#include <openssl/rsa.h>
+#include <openssl/x509.h>
+#include <openssl/evp.h>
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -18,49 +25,14 @@ using grpc::ClientReaderWriter;
 using grpc::ClientWriter;
 using grpc::Status;
 
-class SpiffeWorkloadAPIClient {
- public:
-  SpiffeWorkloadAPIClient(std::shared_ptr<Channel> channel)
-      : stub_(SpiffeWorkloadAPI::NewStub(channel)) {}
-
-  void FetchX509SVID() {
-    std::cout << "Fetching SVIDs" << std::endl;
-
-    X509SVIDRequest x509SVIDRequest;
-    X509SVIDResponse x509SVIDResponse;
-    ClientContext context;
-    context.AddMetadata("workload.spiffe.io", "true");
-
-    std::unique_ptr<ClientReader<X509SVIDResponse> > reader(
-        stub_->FetchX509SVID(&context, x509SVIDRequest));
-
-    while (reader->Read(&x509SVIDResponse)) {
-      std::cout << "Found X509SVID with SPIFFE ID: " << x509SVIDResponse.svids(0).spiffe_id() << std::endl;
-    }
-
-    Status status = reader->Finish();
-    if (status.ok()) {
-      std::cout << "FetchX509SVID rpc succeeded." << std::endl;
-    } else {
-      std::cout << "FetchX509SVID rpc failed." << std::endl;
-    }
-    //std::raise(SIGHUP);
-  }
-
- private:
-  std::unique_ptr<SpiffeWorkloadAPI::Stub> stub_;
-};
-
-typedef struct {
-    int    foo;
-} my_thread_ctx_t;
-
 typedef struct {
     ngx_str_t ssl_spiffe_sock;
     ngx_str_t svid_file_path;
     ngx_str_t svid_key_file_path;
     ngx_str_t svid_bundle_file_path;
 } ngx_http_fetch_spiffe_certs_srv_conf_t;
+
+ngx_http_fetch_spiffe_certs_srv_conf_t spiffeConf;
 
 static ngx_command_t ngx_http_fetch_spiffe_certs_commands[] = {
     { ngx_string("ssl_spiffe_sock"),
@@ -90,44 +62,6 @@ static ngx_command_t ngx_http_fetch_spiffe_certs_commands[] = {
       ngx_null_command
 };
 
-static void my_thread_func(void *data, ngx_log_t *log)
-{
-}
-
-static void my_thread_completion(ngx_event_t *ev)
-{
-}
-
-ngx_int_t fetch_svids_task(ngx_conf_t *conf)
-{
-    my_thread_ctx_t    *ctx;
-    ngx_thread_task_t  *task;
-
-    ngx_str_t name = ngx_string("spiffe_workload_api");
-    ngx_thread_pool_t *tp;
-
-    tp = ngx_thread_pool_add(conf, &name);
-    if (tp == NULL) {
-        return NGX_ERROR;
-    }
-    task = ngx_thread_task_alloc(conf->pool, sizeof(my_thread_ctx_t));
-    if (task == NULL) {
-        return NGX_ERROR;
-    }
-
-    ctx = (my_thread_ctx_t*)task->ctx;
-    ctx->foo = 42;
-    task->handler = my_thread_func;
-    task->event.handler = my_thread_completion;
-    task->event.data = ctx;
-
-    if (ngx_thread_task_post(tp, task) != NGX_OK) {
-        return NGX_ERROR;
-    }
-
-    return NGX_OK;
-}
-
 static void * ngx_http_fetch_spiffe_certs_create_conf(ngx_conf_t *cf)
 {
     ngx_http_fetch_spiffe_certs_srv_conf_t  *scf;
@@ -135,10 +69,68 @@ static void * ngx_http_fetch_spiffe_certs_create_conf(ngx_conf_t *cf)
     return scf;
 }
 
+static void derToPem(std::string der, const char* pemFileName) {
+    X509 *x509;
+    unsigned char *buf, *p;
+    FILE* fd = NULL;
+
+    int len = der.size();
+    buf = (unsigned char *)der.c_str();
+    p = buf;
+    x509 = d2i_X509(NULL, (const unsigned char**)&p, len);
+    if (x509 == NULL) {
+         std::cout << "d2i_X509 error. Output file is: '" << pemFileName << "'" << std::endl;
+        return;
+    }
+    fd = fopen(pemFileName,"w+");
+    if (fd) {
+        PEM_write_X509(fd, x509);
+        fclose(fd);
+    }
+    else {
+        std::cout << "can't open file: '" << pemFileName << "'" << std::endl;
+    }
+}
+
+static void fetchSvids(ngx_http_fetch_spiffe_certs_srv_conf_t *conf) {
+    bool sendSigHup = false;
+    while (true) {
+        std::unique_ptr<SpiffeWorkloadAPI::Stub> stub_;
+        std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:/tmp/agent.sock", grpc::InsecureChannelCredentials());
+        stub_ = SpiffeWorkloadAPI::NewStub(channel);
+
+        std::cout << "Fetching SVIDs" << std::endl;
+
+        X509SVIDRequest x509SVIDRequest;
+        X509SVIDResponse x509SVIDResponse;
+        ClientContext context;
+        context.AddMetadata("workload.spiffe.io", "true");
+
+        std::unique_ptr<ClientReader<X509SVIDResponse> > reader(
+            stub_->FetchX509SVID(&context, x509SVIDRequest));
+
+        while (reader->Read(&x509SVIDResponse)) {
+            std::cout << "Found X509SVID with SPIFFE ID: " << x509SVIDResponse.svids(0).spiffe_id() << std::endl;
+
+            derToPem(x509SVIDResponse.svids(0).x509_svid(), (const char*)conf->svid_file_path.data);
+            derToPem(x509SVIDResponse.svids(0).x509_svid_key(), (const char*)conf->svid_key_file_path.data);
+            derToPem(x509SVIDResponse.svids(0).bundle(), (const char*)conf->svid_bundle_file_path.data);
+        }
+
+        if (sendSigHup) {
+            reader->Finish();
+            std::cout << "Sending SIGHUP signal" << std::endl;
+            std::raise(SIGHUP);
+        }
+        else {
+            sendSigHup = true;
+        }
+    }
+}
+
 static ngx_int_t ngx_http_fetch_spiffe_certs(ngx_http_fetch_spiffe_certs_srv_conf_t *conf) {
-    std::shared_ptr<grpc::Channel> ch = grpc::CreateChannel("unix:/tmp/agent.sock", grpc::InsecureChannelCredentials());
-    SpiffeWorkloadAPIClient wlclient(ch);
-    wlclient.FetchX509SVID();
+    std::thread fetchSvidsThread(fetchSvids, conf);
+    fetchSvidsThread.detach();
 
     return NGX_OK;
 }
