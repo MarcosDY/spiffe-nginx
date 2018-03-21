@@ -1,5 +1,0 @@
-package: github.com/spiffe/ngx_http_fetch_spiffe_certs_module
-import:
-- package: google.golang.org/grpc
-  version: ^1.10.0
-- package: github.com/spiffe/spire/proto/api/workload

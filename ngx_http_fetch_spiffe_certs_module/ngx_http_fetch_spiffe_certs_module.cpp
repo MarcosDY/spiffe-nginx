@@ -1,6 +1,59 @@
-#include <ngx_config.h>
-#include <ngx_core.h>
-#include <ngx_http.h>
+extern "C" {
+    #include <ngx_config.h>
+    #include <ngx_core.h>
+    #include <ngx_http.h>
+}
+#include <csignal>
+#include <grpc/grpc.h>
+#include <grpc++/channel.h>
+#include <grpc++/client_context.h>
+#include <grpc++/create_channel.h>
+#include <grpc++/security/credentials.h>
+#include "workload.grpc.pb.h"
+
+using grpc::Channel;
+using grpc::ClientContext;
+using grpc::ClientReader;
+using grpc::ClientReaderWriter;
+using grpc::ClientWriter;
+using grpc::Status;
+
+class SpiffeWorkloadAPIClient {
+ public:
+  SpiffeWorkloadAPIClient(std::shared_ptr<Channel> channel)
+      : stub_(SpiffeWorkloadAPI::NewStub(channel)) {}
+
+  void FetchX509SVID() {
+    std::cout << "Fetching SVIDs" << std::endl;
+
+    X509SVIDRequest x509SVIDRequest;
+    X509SVIDResponse x509SVIDResponse;
+    ClientContext context;
+    context.AddMetadata("workload.spiffe.io", "true");
+
+    std::unique_ptr<ClientReader<X509SVIDResponse> > reader(
+        stub_->FetchX509SVID(&context, x509SVIDRequest));
+
+    while (reader->Read(&x509SVIDResponse)) {
+      std::cout << "Found X509SVID with SPIFFE ID: " << x509SVIDResponse.svids(0).spiffe_id() << std::endl;
+    }
+
+    Status status = reader->Finish();
+    if (status.ok()) {
+      std::cout << "FetchX509SVID rpc succeeded." << std::endl;
+    } else {
+      std::cout << "FetchX509SVID rpc failed." << std::endl;
+    }
+    //std::raise(SIGHUP);
+  }
+
+ private:
+  std::unique_ptr<SpiffeWorkloadAPI::Stub> stub_;
+};
+
+typedef struct {
+    int    foo;
+} my_thread_ctx_t;
 
 typedef struct {
     ngx_str_t ssl_spiffe_sock;
@@ -37,34 +90,63 @@ static ngx_command_t ngx_http_fetch_spiffe_certs_commands[] = {
       ngx_null_command
 };
 
+static void my_thread_func(void *data, ngx_log_t *log)
+{
+}
+
+static void my_thread_completion(ngx_event_t *ev)
+{
+}
+
+ngx_int_t fetch_svids_task(ngx_conf_t *conf)
+{
+    my_thread_ctx_t    *ctx;
+    ngx_thread_task_t  *task;
+
+    ngx_str_t name = ngx_string("spiffe_workload_api");
+    ngx_thread_pool_t *tp;
+
+    tp = ngx_thread_pool_add(conf, &name);
+    if (tp == NULL) {
+        return NGX_ERROR;
+    }
+    task = ngx_thread_task_alloc(conf->pool, sizeof(my_thread_ctx_t));
+    if (task == NULL) {
+        return NGX_ERROR;
+    }
+
+    ctx = (my_thread_ctx_t*)task->ctx;
+    ctx->foo = 42;
+    task->handler = my_thread_func;
+    task->event.handler = my_thread_completion;
+    task->event.data = ctx;
+
+    if (ngx_thread_task_post(tp, task) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    return NGX_OK;
+}
+
 static void * ngx_http_fetch_spiffe_certs_create_conf(ngx_conf_t *cf)
 {
     ngx_http_fetch_spiffe_certs_srv_conf_t  *scf;
-
-    scf = ngx_pcalloc(cf->pool, sizeof(ngx_http_fetch_spiffe_certs_srv_conf_t));
+    scf = (ngx_http_fetch_spiffe_certs_srv_conf_t*)ngx_pcalloc(cf->pool, sizeof(ngx_http_fetch_spiffe_certs_srv_conf_t));
     return scf;
 }
 
 static ngx_int_t ngx_http_fetch_spiffe_certs(ngx_http_fetch_spiffe_certs_srv_conf_t *conf) {
-    void *go_module = dlopen("ngx_http_fetch_spiffe_certs_module.so", RTLD_LAZY);
-    if (!go_module) {
-        fprintf(stderr, "go module not found");
-        return NGX_ERROR;
-    }
-
-    int (*fun)(u_char *, u_char *, u_char *, u_char *) = (int (*)(u_char *, u_char *, u_char *, u_char *)) dlsym(go_module, "FetchSvids");
-    fun(conf->ssl_spiffe_sock.data,
-                            conf->svid_file_path.data,
-                            conf->svid_key_file_path.data,
-                            conf->svid_bundle_file_path.data);
+    std::shared_ptr<grpc::Channel> ch = grpc::CreateChannel("unix:/tmp/agent.sock", grpc::InsecureChannelCredentials());
+    SpiffeWorkloadAPIClient wlclient(ch);
+    wlclient.FetchX509SVID();
 
     return NGX_OK;
 }
 
 static char * ngx_http_fetch_spiffe_certs_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 {
-    ngx_http_fetch_spiffe_certs_srv_conf_t *prev = parent;
-    ngx_http_fetch_spiffe_certs_srv_conf_t *conf = child;
+    ngx_http_fetch_spiffe_certs_srv_conf_t *prev = (ngx_http_fetch_spiffe_certs_srv_conf_t*)parent;
+    ngx_http_fetch_spiffe_certs_srv_conf_t *conf = (ngx_http_fetch_spiffe_certs_srv_conf_t*)child;
 
     ngx_conf_merge_str_value(conf->ssl_spiffe_sock, prev->ssl_spiffe_sock, "");
     ngx_conf_merge_str_value(conf->svid_file_path, prev->svid_file_path, "");
