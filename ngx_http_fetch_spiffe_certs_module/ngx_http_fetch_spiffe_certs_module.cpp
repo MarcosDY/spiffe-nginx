@@ -29,6 +29,7 @@ using grpc::Status;
 
 bool conf_merged = false;
 std::mutex conf_merged_mutex;
+static bool isCertificateUpdated(const char *certName);
 
 typedef struct {
     ngx_str_t ssl_spiffe_sock;
@@ -188,9 +189,9 @@ static void fetchSvids(ngx_http_fetch_spiffe_certs_srv_conf_t *conf) {
         std::cout << "Found X509SVID with SPIFFE ID: " << x509SVIDResponse.svids(0).spiffe_id() << std::endl;
         std::cout << "Bundle len: " << x509SVIDResponse.svids(0).bundle().size() << std::endl;
 
-        derToPem(x509SVIDResponse.svids(0).x509_svid(), (const char*)conf->svid_file_path.data);
         derKeyToPem(x509SVIDResponse.svids(0).x509_svid_key(), (const char*)conf->svid_key_file_path.data);
         derBundleToPem(x509SVIDResponse.svids(0).bundle(), (const char*)conf->svid_bundle_file_path.data);
+        derToPem(x509SVIDResponse.svids(0).x509_svid(), (const char*)conf->svid_file_path.data);
     }
 
     reader->Finish();
@@ -216,9 +217,48 @@ static char * ngx_http_fetch_spiffe_certs_merge_srv_conf(ngx_conf_t *cf, void *p
     std::thread fetchSvidsThread(fetchSvids, conf);
     fetchSvidsThread.detach();
 
+    unsigned t0;
+    t0 = clock();
+    
+    // Wait until certs are updated to continue
+    while (!isCertificateUpdated((const char*)conf->svid_file_path.data) 
+            && (double(clock()-t0)/CLOCKS_PER_SEC) < 30) {
+                // wait until certificate is updated or timelimit is reached
+    }
+    if ((double(clock()-t0)/CLOCKS_PER_SEC) >= 30) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                       "Certificates could not be updated");
+    }
+
     conf_merged = true;
     return NGX_CONF_OK;
 }
+
+
+static bool isCertificateUpdated(const char *certName)
+{
+    BIO         *bio;
+    X509        *x509;
+    bio = BIO_new_file(certName, "r");
+    if (bio == NULL) {
+        std::cout << "File could not  be loaded"  << std::endl;
+   
+        return false;
+    }
+   
+    while ((x509 = PEM_read_bio_X509_AUX(bio, NULL, NULL, NULL)) != NULL) {
+        if (X509_cmp_current_time(X509_get_notAfter(x509)) > 0) {
+            X509_free(x509);
+            BIO_free(bio);
+            return true;
+        }
+       X509_free(x509);
+    }
+    
+    BIO_free(bio);
+    return false;
+}
+
 
 static ngx_http_module_t ngx_http_fetch_spiffe_certs_module_ctx = {
     NULL,                                       /* preconfiguration */
