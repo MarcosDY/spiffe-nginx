@@ -4,8 +4,10 @@ extern "C" {
     #include <ngx_http.h>
 }
 #include <thread>
-#include <csignal>
+#include <mutex>
 #include <fstream>
+#include <signal.h>
+
 #include <grpc/grpc.h>
 #include <grpc++/channel.h>
 #include <grpc++/client_context.h>
@@ -24,6 +26,9 @@ using grpc::ClientReader;
 using grpc::ClientReaderWriter;
 using grpc::ClientWriter;
 using grpc::Status;
+
+bool conf_merged = false;
+std::mutex conf_merged_mutex;
 
 typedef struct {
     ngx_str_t ssl_spiffe_sock;
@@ -69,6 +74,45 @@ static void * ngx_http_fetch_spiffe_certs_create_conf(ngx_conf_t *cf)
     return scf;
 }
 
+static void derKeyToPem(std::string der, const char* pemFileName) {
+    unsigned char *buf, *p;
+    FILE* fd = NULL;
+    EC_KEY    *ec;
+    EVP_PKEY *evp;
+
+    buf = (unsigned char *)der.c_str();
+    p = buf;
+
+    int len = der.size();
+
+    // transform DER to EVP_KEY
+    evp =  d2i_AutoPrivateKey(NULL, (const unsigned char**)&p,
+                             len);
+    if (evp == NULL) {
+        std::cout << "Could not extract evp key" << std::endl;
+        return;
+    }
+
+    // Get EC from EVP
+    ec = EVP_PKEY_get1_EC_KEY(evp);
+
+    if (ec == NULL) {
+        std::cout << "Could not get EC key" << std::endl;
+        return;
+    }
+
+    // create and clean file if it exists
+    fd = fopen(pemFileName,"w+");
+    if (fd) {
+        PEM_write_ECPrivateKey(fd, ec, NULL, NULL, 0, 0, NULL);
+        fclose(fd);
+        return;
+    }
+    else {
+        std::cout << "can't open file: '" << pemFileName << "'" << std::endl;
+    }
+}
+
 static void derToPem(std::string der, const char* pemFileName) {
     X509 *x509;
     unsigned char *buf, *p;
@@ -79,7 +123,7 @@ static void derToPem(std::string der, const char* pemFileName) {
     p = buf;
     x509 = d2i_X509(NULL, (const unsigned char**)&p, len);
     if (x509 == NULL) {
-         std::cout << "d2i_X509 error. Output file is: '" << pemFileName << "'" << std::endl;
+        std::cout << "d2i_X509 error. Output file is: '" << pemFileName << "'" << std::endl;
         return;
     }
     fd = fopen(pemFileName,"w+");
@@ -92,51 +136,75 @@ static void derToPem(std::string der, const char* pemFileName) {
     }
 }
 
-static void fetchSvids(ngx_http_fetch_spiffe_certs_srv_conf_t *conf) {
-    bool sendSigHup = false;
-    while (true) {
-        std::unique_ptr<SpiffeWorkloadAPI::Stub> stub_;
-        std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:/tmp/agent.sock", grpc::InsecureChannelCredentials());
-        stub_ = SpiffeWorkloadAPI::NewStub(channel);
+static void derBundleToPem(std::string der, const char* pemFileName) {
+    X509 *x509;
+    unsigned char *buf, *p;
+    FILE* fd = NULL;
 
-        std::cout << "Fetching SVIDs" << std::endl;
+    int len = der.size();
+    buf = (unsigned char *)der.c_str();
+    p = buf;
 
-        X509SVIDRequest x509SVIDRequest;
-        X509SVIDResponse x509SVIDResponse;
-        ClientContext context;
-        context.AddMetadata("workload.spiffe.io", "true");
+    fd = fopen(pemFileName,"w+");
 
-        std::unique_ptr<ClientReader<X509SVIDResponse> > reader(
-            stub_->FetchX509SVID(&context, x509SVIDRequest));
+    while ((x509 = d2i_X509(NULL, (const unsigned char**)&p, len)) != NULL) {
+       fprintf(stderr, "Extracting certificate for %s\n", pemFileName);
 
-        while (reader->Read(&x509SVIDResponse)) {
-            std::cout << "Found X509SVID with SPIFFE ID: " << x509SVIDResponse.svids(0).spiffe_id() << std::endl;
-
-            derToPem(x509SVIDResponse.svids(0).x509_svid(), (const char*)conf->svid_file_path.data);
-            derToPem(x509SVIDResponse.svids(0).x509_svid_key(), (const char*)conf->svid_key_file_path.data);
-            derToPem(x509SVIDResponse.svids(0).bundle(), (const char*)conf->svid_bundle_file_path.data);
+        if (x509 == NULL) {
+            std::cout << "d2i_X509 error. Output file is: '" << pemFileName << "'" << std::endl;
+            X509_free(x509);    
+            return;
         }
 
-        if (sendSigHup) {
-            reader->Finish();
-            std::cout << "Sending SIGHUP signal" << std::endl;
-            std::raise(SIGHUP);
+        if (fd) {
+            PEM_write_X509(fd, x509);   
         }
         else {
-            sendSigHup = true;
+            std::cout << "can't open file: '" << pemFileName << "'" << std::endl;
         }
+        X509_free(x509);        
     }
+    fclose(fd);
 }
 
-static ngx_int_t ngx_http_fetch_spiffe_certs(ngx_http_fetch_spiffe_certs_srv_conf_t *conf) {
-    std::thread fetchSvidsThread(fetchSvids, conf);
-    fetchSvidsThread.detach();
+static void fetchSvids(ngx_http_fetch_spiffe_certs_srv_conf_t *conf) {
+    std::lock_guard<std::mutex> lock(conf_merged_mutex);
 
-    return NGX_OK;
+    std::unique_ptr<SpiffeWorkloadAPI::Stub> stub_;
+    std::shared_ptr<grpc::Channel> channel = grpc::CreateChannel("unix:/tmp/agent.sock", grpc::InsecureChannelCredentials());
+    stub_ = SpiffeWorkloadAPI::NewStub(channel);
+
+    std::cout << "Fetching SVIDs" << std::endl;
+
+    X509SVIDRequest x509SVIDRequest;
+    X509SVIDResponse x509SVIDResponse;
+    ClientContext context;
+    context.AddMetadata("workload.spiffe.io", "true");
+
+    std::unique_ptr<ClientReader<X509SVIDResponse> > reader(
+        stub_->FetchX509SVID(&context, x509SVIDRequest));
+
+    while (reader->Read(&x509SVIDResponse)) {
+        std::cout << "Found X509SVID with SPIFFE ID: " << x509SVIDResponse.svids(0).spiffe_id() << std::endl;
+        std::cout << "Bundle len: " << x509SVIDResponse.svids(0).bundle().size() << std::endl;
+
+        derToPem(x509SVIDResponse.svids(0).x509_svid(), (const char*)conf->svid_file_path.data);
+        derKeyToPem(x509SVIDResponse.svids(0).x509_svid_key(), (const char*)conf->svid_key_file_path.data);
+        derBundleToPem(x509SVIDResponse.svids(0).bundle(), (const char*)conf->svid_bundle_file_path.data);
+    }
+
+    reader->Finish();
+    if (conf_merged) {
+        std::cout << "Sending SIGHUP signal to process ID: " << ::getpid() << std::endl;
+        kill(getpid(), SIGHUP);
+    }
 }
 
 static char * ngx_http_fetch_spiffe_certs_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 {
+    std::lock_guard<std::mutex> lock(conf_merged_mutex);
+    conf_merged = false;
+
     ngx_http_fetch_spiffe_certs_srv_conf_t *prev = (ngx_http_fetch_spiffe_certs_srv_conf_t*)parent;
     ngx_http_fetch_spiffe_certs_srv_conf_t *conf = (ngx_http_fetch_spiffe_certs_srv_conf_t*)child;
 
@@ -145,7 +213,10 @@ static char * ngx_http_fetch_spiffe_certs_merge_srv_conf(ngx_conf_t *cf, void *p
     ngx_conf_merge_str_value(conf->svid_key_file_path, prev->svid_key_file_path, "");
     ngx_conf_merge_str_value(conf->svid_bundle_file_path, prev->svid_bundle_file_path, "");
 
-    ngx_http_fetch_spiffe_certs(conf);
+    std::thread fetchSvidsThread(fetchSvids, conf);
+    fetchSvidsThread.detach();
+
+    conf_merged = true;
     return NGX_CONF_OK;
 }
 
