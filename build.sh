@@ -21,6 +21,11 @@ setup_nginx() {
 		tar -xzf ${ngx_tar}
 	fi
 	cp -rvp spiffe-support/* ${ngx_dir}
+
+	cd ngx_http_fetch_spiffe_certs_module
+	protoc --grpc_out=. --plugin=protoc-gen-grpc=`which grpc_cpp_plugin` workload.proto
+	protoc --cpp_out=. workload.proto
+	cd ..
 }
 
 case $1 in
@@ -30,7 +35,6 @@ case $1 in
 		set -x
 		./configure $_config \
 			--with-debug \
-			--with-threads \
 			--with-http_ssl_module \
 			--add-module=/opt/nginx-dev/ngx_http_fetch_spiffe_certs_module
 		set +x
