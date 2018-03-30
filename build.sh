@@ -8,6 +8,7 @@ set -e
 
 ngx_tar=.cache/$(basename ${NGINX_URL})
 ngx_dir=nginx-${NGINX_VERSION}
+ngx_modules=objs/ngx_modules.c
 
 setup_nginx() {
 	mkdir -p /usr/local/nginx/html
@@ -28,6 +29,14 @@ setup_nginx() {
 	cd ..
 }
 
+update_nginx_modules() {
+	pwd
+	sed -i '/ngx_http_fetch_spiffe_certs_module/d' ${ngx_modules}
+	sed -i '/extern ngx_module_t  ngx_http_ssl_module;/i \extern ngx_module_t  ngx_http_fetch_spiffe_certs_module; \' ${ngx_modules}
+	sed -i '/&ngx_http_ssl_module,/i \    &ngx_http_fetch_spiffe_certs_module, \' ${ngx_modules}
+	sed -i '/"ngx_http_ssl_module",/i \    "ngx_http_fetch_spiffe_certs_module", \' ${ngx_modules}
+}
+
 case $1 in
 	configure)
 		setup_nginx
@@ -38,6 +47,7 @@ case $1 in
 			--with-http_ssl_module \
 			--add-module=/opt/nginx-dev/ngx_http_fetch_spiffe_certs_module
 		set +x
+		update_nginx_modules
 		;;
 	make)
 		set -x

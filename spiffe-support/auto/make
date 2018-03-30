@@ -434,7 +434,7 @@ if test -n "$NGX_ADDON_SRCS"; then
         ext=`echo ${ngx_src}|cut -d . -f 2`
         ngx_cxx="$ngx_cc"
 
-        if [ $ext = "cpp" ] || [ $ext = "pb" ] || [ $ext = "grpc" ]; then
+        if [ $ext = "cpp" ] || [ $ext = "cc" ] || [ $ext = "pb" ] || [ $ext = "grpc" ]; then
                     ngx_cxx="$ngx_cc \$(CXXFLAGS)"
         fi
 
