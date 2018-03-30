@@ -1948,7 +1948,7 @@ ngx_http_process_request(ngx_http_request_t *r)
 
                     if (found != 1 ) {
                         ngx_log_error(NGX_LOG_INFO, c->log, 0,
-                                    "client spiffe id is no supported");
+                                    "SPIFFE ID is not allowed: \"%s\",", str->data);
 
                         ngx_ssl_remove_cached_session(c->ssl->session_ctx,
                                             (SSL_get0_session(c->ssl->connection)));
