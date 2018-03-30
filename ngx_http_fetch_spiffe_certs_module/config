@@ -1,5 +1,6 @@
 ngx_addon_name=ngx_http_fetch_spiffe_certs_module
 HTTP_MODULES="$HTTP_MODULES ngx_http_fetch_spiffe_certs_module"
 NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/ngx_http_fetch_spiffe_certs_module.cpp"
+NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/c-spiffe.cc"
 NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/workload.pb.cc"
 NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/workload.grpc.pb.cc"
