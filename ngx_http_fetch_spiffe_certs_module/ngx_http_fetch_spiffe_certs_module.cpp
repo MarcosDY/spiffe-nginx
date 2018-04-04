@@ -8,7 +8,7 @@ extern "C" {
 #include <mutex>
 #include <signal.h>
 
-#include "c-spiffe.cc"
+#include "c-spiffe.h"
 
 #include <openssl/ssl.h>
 #include <openssl/rsa.h>
