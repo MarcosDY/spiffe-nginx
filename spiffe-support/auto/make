@@ -223,8 +223,8 @@ ngx_main_link=${MAIN_LINK:+`echo $MAIN_LINK \
 
 ngx_spiffe_link=" \\
     -lstdc++  \\
-    -L/usr/local/lib \`pkg-config --libs protobuf grpc++\` \\
-    -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed "
+    -L/usr/local/lib -lgrpc++ -lgrpc -lprotobuf -lgrpc++_reflection \\
+	-ldl -lpthread -lz -lssl"
 cat << END                                                    >> $NGX_MAKEFILE
 
 build:	binary modules manpage
