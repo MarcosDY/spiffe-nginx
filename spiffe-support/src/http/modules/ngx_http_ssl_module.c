@@ -762,18 +762,6 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
         }
     }
 
-    // verify if spiffe sock is enabled
-    //
-    if (conf->ssl_spiffe) {
-        // validate certificate
-        if (ngx_ssl_spiffe_id_verification(cf, &conf->ssl,
-                                       conf->ssl_spiffe_accept)                                       
-            != NGX_OK)
-        {
-            return NGX_CONF_ERROR;
-        }
-    }
-
     if (ngx_ssl_trusted_certificate(cf, &conf->ssl,
                                     &conf->trusted_certificate,
                                     conf->verify_depth)

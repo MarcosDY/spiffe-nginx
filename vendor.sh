@@ -59,16 +59,7 @@ do_grpc() {
 		git submodule update --init
 		make
 		make install
-	)
-}
-
-do_protobuf() {
-	untar_url ${PROTOBUF_URL}
-	(
-		cd ${VENDOR_DIR}/protobuf-${PROTOBUF_VERSION}
-		./autogen.sh
-		./configure
-		make
+		cd third_party/protobuf
 		make install
 	)
 }
@@ -78,5 +69,4 @@ do_pcre
 do_zlib
 do_openssl
 do_grpc
-do_protobuf
 rm -rf ${VENDOR_DIR}

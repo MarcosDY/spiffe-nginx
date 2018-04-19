@@ -714,68 +714,6 @@ ngx_ssl_client_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
 }
 
 ngx_int_t
-ngx_ssl_spiffe_id_verification(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_array_t *accepted)
-{
-    int                     n;
-    ngx_uint_t              i;
-    X509                    *cert;
-    GENERAL_NAME            *sanName;
-    ASN1_STRING             *str;
-    STACK_OF(GENERAL_NAME)  *san_names = NULL;
-    ngx_str_t               *accepted_elts;
-
-    // Get certificate from connection
-    //
-    cert = SSL_CTX_get_ex_data(ssl->ctx, ngx_ssl_certificate_index);
-
-	// Try to extract the names within the SAN extension from the certificate
-    //
-	san_names = X509_get_ext_d2i((X509 *) cert, NID_subject_alt_name, NULL, NULL);
-
-    // SVID must have a SAN 
-    //
-    if (!san_names) {
-        ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
-                        "There must be a SAN");
-        return NGX_ERROR;
-    }
-
-    n = sk_GENERAL_NAME_num(san_names);
-    // SVID must have only one SAN
-    //
-    if (n > 1) {
-        ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
-                        "There must be only 1 SAN");
-        return NGX_ERROR;
-    }
-   
-    sanName = sk_GENERAL_NAME_value(san_names, 0);   
-    // Validate SAN is URI type
-    //
-    if (sanName->type != GEN_URI) {
-        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ssl->log, 0,
-                        "SAN must be URI type");
-        return NGX_ERROR;
-    }
-
-    str = sanName->d.dNSName;
-    accepted_elts = accepted->elts;
-
-    // Vefify Spiffy id is in accepted list
-    //
-    for (i = 0; i < accepted->nelts; i++) {        
-        if (ngx_strcmp(str->data, accepted_elts[i].data) == 0) {
-
-            return NGX_OK;               
-        }
-    }
-
-    ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
-                        "Spiffe id is no accepted \n");
-    return NGX_ERROR;    
-}
-
-ngx_int_t
 ngx_ssl_trusted_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
     ngx_int_t depth)
 {
@@ -3288,8 +3226,8 @@ ngx_ssl_check_spiffe_id(ngx_connection_t *c, ngx_array_t *accepted)
         }
     }
 
-    ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0,
-                        "Spiffe id is no accepted \n");
+    ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0,
+                        "SPIFFE ID is not allowed: \"%s\"", str->data);
     goto failed;
     
 failed:
