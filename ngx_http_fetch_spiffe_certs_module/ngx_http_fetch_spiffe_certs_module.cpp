@@ -7,6 +7,7 @@ extern "C" {
 #include <thread>
 #include <mutex>
 #include <signal.h>
+#include <sstream>
 
 #include "c-spiffe.h"
 
@@ -22,13 +23,14 @@ using grpc::ClientReaderWriter;
 using grpc::ClientWriter;
 using grpc::Status;
 
-#define INITIAL_DELAY 1000000
-#define TIMEOUT INITIAL_DELAY * 4
+#define INITIAL_DELAY 1000000 // microseconds
+#define MAX_DELAY INITIAL_DELAY * 60
 useconds_t retry_delay = INITIAL_DELAY;
 
-bool conf_merged = false;
-std::mutex conf_merged_mutex;
+bool firstFetch = true;
 static bool is_certificate_updated(const char *cert_path, ngx_conf_t *cf);
+void updatedCallback(X509SVIDResponse x509SVIDResponse);
+spiffe::WorkloadAPIClient workloadClient(updatedCallback);
 static void log(std::string message, std::string arg);
 static void log(std::string message);
 
@@ -177,47 +179,41 @@ void updatedCallback(X509SVIDResponse x509SVIDResponse) {
     der_key_to_pem(x509SVIDResponse.svids(0).x509_svid_key(), (const char *)configuration.svid_key_file_path.data);
     der_bundle_to_pem(x509SVIDResponse.svids(0).bundle(), (const char *)configuration.svid_bundle_file_path.data);
     der_to_pem(x509SVIDResponse.svids(0).x509_svid(), (const char *)configuration.svid_file_path.data);
+
+    if (!firstFetch) {
+        workloadClient.StopFetchingX509SVIDs();
+    }
+    firstFetch = false;
 }
 
 void fetch_svids() {
     log("fetching SVIDs");
+    firstFetch = true;
+    retry_delay = INITIAL_DELAY;
     std::string socket_address = (const char*)configuration.ssl_spiffe_sock.data;
-    spiffe::WorkloadAPIClient workloadClient("unix:" + socket_address, updatedCallback);
+    workloadClient.SetSocketAddress("unix:" + socket_address);
 
-    //Start:
-    workloadClient.Start();
-
-    /*
-    * Retries with backoff is not currently implemented due to https://github.com/spiffe/spire/issues/401
-    * Once the issue is fixed, this logic will be changed accordingly
-    
-    if (workloadClient.GetStatus().ok()) {
-       log("FetchX509SVID stream finished");
-    } else {
+    Start:
+    workloadClient.FetchX509SVIDs();
+    if (!workloadClient.GetFetchX509SVIDsStatus().ok()) {
         std::stringstream msg;
-        msg << "FetchX509SVID rpc failed. Error code: " << workloadClient.GetStatus().error_code() << ". Error message: " << workloadClient.GetStatus().error_message();
+        msg << "FetchX509SVID rpc failed. Error code: " <<
+            workloadClient.GetFetchX509SVIDsStatus().error_code() <<
+            ". Error message: " <<
+            workloadClient.GetFetchX509SVIDsStatus().error_message();
         log(msg.str());
         usleep(retry_delay);
-        if (delretry_delayay < TIMEOUT) {
+        if (retry_delay < MAX_DELAY) {
             retry_delay += retry_delay;
-            goto Start;
         }
-        else {
-            std::cout << "timeout" << std::endl;
-        }
+        goto Start;
     }
-    */
-    std::lock_guard<std::mutex> lock(conf_merged_mutex);
-    if (conf_merged) {
-        kill(::getpid(), SIGHUP);
-    }
+
+    kill(::getpid(), SIGHUP);
 }
 
 static char * ngx_http_fetch_spiffe_certs_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 {
-    std::lock_guard<std::mutex> lock(conf_merged_mutex);
-    conf_merged = false;
-
     ngx_http_fetch_spiffe_certs_srv_conf_t *prev = (ngx_http_fetch_spiffe_certs_srv_conf_t*)parent;
     ngx_http_fetch_spiffe_certs_srv_conf_t *conf = (ngx_http_fetch_spiffe_certs_srv_conf_t*)child;
 
@@ -247,7 +243,6 @@ static char * ngx_http_fetch_spiffe_certs_merge_srv_conf(ngx_conf_t *cf, void *p
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "certificates could not be updated");
     }
 
-    conf_merged = true;
     return NGX_CONF_OK;
 }
 
