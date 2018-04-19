@@ -1,5 +1,5 @@
 
-docker = docker run --name spiffe-nginx -v $(docker_volume) -p 80:80 -it $(docker_image)
+docker = docker run -v $(docker_volume) -it
 docker_volume := $(shell echo $${PWD}):/opt/nginx-dev
 docker_image = spiffe-nginx:latest
 
@@ -9,15 +9,15 @@ container: Dockerfile
 	docker build -t $(docker_image) .
 
 build:
-	$(docker) ./build.sh make
+	$(docker) --name spiffe-nginx-build --rm $(docker_image) ./build.sh make
 
 configure:
-	$(docker) ./build.sh configure
+	$(docker) --name spiffe-nginx-build --rm $(docker_image) ./build.sh configure
 
 clean:
-	$(docker) ./build.sh clean
+	$(docker) --name spiffe-nginx-build --rm $(docker_image) ./build.sh clean
 
 shell:
-	$(docker) /bin/bash
+	$(docker) --name spiffe-nginx-shell --privileged -p 8088:80 $(docker_image) /bin/bash
 
 .PHONY: build configure clean shell

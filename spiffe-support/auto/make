@@ -210,8 +210,8 @@ ngx_objs=`echo $ngx_all_objs $ngx_modules_obj \
           -e "s/\//$ngx_regex_dirsep/g"`
 
 ngx_libs=
-if test -n "$NGX_LD_OPT$CORE_LIBS"; then
-    ngx_libs=`echo $NGX_LD_OPT $CORE_LIBS \
+if test -n "$NGX_LD_OPT"; then
+    ngx_libs=`echo $NGX_LD_OPT \
         | sed -e "s/\//$ngx_regex_dirsep/g" -e "s/^/$ngx_long_regex_cont/"`
 fi
 
@@ -222,9 +222,11 @@ ngx_main_link=${MAIN_LINK:+`echo $MAIN_LINK \
     | sed -e "s/\//$ngx_regex_dirsep/g" -e "s/^/$ngx_long_regex_cont/"`}
 
 ngx_spiffe_link=" \\
-    -lstdc++  \\
-    -L/usr/local/lib \`pkg-config --libs protobuf grpc++\` \\
-    -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed "
+	-ldl -lcrypt -lpcre -lssl -lcrypto -ldl -lz \
+    -static-libstdc++  \\
+    -L/usr/local/lib -lgrpc++ -lgrpc -lprotobuf \\
+    -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed \\
+	-ldl -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -lz -lssl"
 cat << END                                                    >> $NGX_MAKEFILE
 
 build:	binary modules manpage

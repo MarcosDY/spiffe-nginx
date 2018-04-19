@@ -43,6 +43,7 @@ case $1 in
 		cd ${ngx_dir}
 		set -x
 		./configure $_config \
+			--with-cc-opt="-fPIE" --with-ld-opt="-fpie -static" \
 			--with-debug \
 			--with-http_ssl_module \
 			--add-module=/opt/nginx-dev/ngx_http_fetch_spiffe_certs_module
