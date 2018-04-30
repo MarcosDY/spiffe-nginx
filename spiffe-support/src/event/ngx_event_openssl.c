@@ -3218,7 +3218,7 @@ ngx_ssl_check_spiffe_id(ngx_connection_t *c, ngx_array_t *accepted)
     str = sanName->d.dNSName;    
     accepted_elts = accepted->elts;
     
-    // Vefify Spiffy id is in accepted list
+    // Vefify that the SPIFFE ID is in the accepted list
     //
     for (i = 0; i < accepted->nelts; i++) {        
         if (ngx_strcmp(str->data, accepted_elts[i].data) == 0) {

@@ -1937,7 +1937,7 @@ ngx_http_process_request(ngx_http_request_t *r)
                     accepted_elts = sscf->ssl_spiffe_accept->elts;
 
                     found = 0;
-                    // Vefify Spiffy id is in accepted list
+                    // Vefify that the SPIFFE ID is in the accepted list
                     //
                     for (i = 0; i < sscf->ssl_spiffe_accept->nelts; i++) {        
                         if (ngx_strcmp(str->data, accepted_elts[i].data) == 0) {
