@@ -191,13 +191,14 @@ void fetch_svids() {
     firstFetch = true;
     retry_delay = INITIAL_DELAY;
     std::string socket_address = (const char*)configuration.ssl_spiffe_sock.data;
+    std::string const SPIRE_AGENT_ERR = "Invalid socket path of SPIRE Agent: ";
     if (socket_address.length() == 0) {
-        log("Invalid socket path of SPIRE Agent: empty path");
+        log(SPIRE_AGENT_ERR, "empty path");
         return;
     }
 
     if (socket_address.at(0) != '/') {
-        log("Invalid socket path of SPIRE Agent: path not absolute");
+        log(SPIRE_AGENT_ERR, "path not absolute");
         return;
     }    
     workloadClient.SetSocketAddress("unix:" + socket_address);
