@@ -648,34 +648,37 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
     conf->ssl.log = cf->log;
    
     if (conf->enable) {
+        // not expecting to have certificates and keys specified if ssl_spiffe is enabled,
+        // it will automatically load X.509-SVIDs into memory
+        //
+        if (!conf->ssl_spiffe) {
+            if (conf->certificates == NULL) {
+                ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
+                            "no \"ssl_certificate\" is defined for "
+                            "the \"ssl\" directive in %s:%ui",
+                            conf->file, conf->line);
+                return NGX_CONF_ERROR;
+            }
 
-        if (conf->certificates == NULL) {
-            ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
-                          "no \"ssl_certificate\" is defined for "
-                          "the \"ssl\" directive in %s:%ui",
-                          conf->file, conf->line);
-            return NGX_CONF_ERROR;
+            if (conf->certificate_keys == NULL) {
+                ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
+                            "no \"ssl_certificate_key\" is defined for "
+                            "the \"ssl\" directive in %s:%ui",
+                            conf->file, conf->line);
+                return NGX_CONF_ERROR;
+            }
+
+            if (conf->certificate_keys->nelts < conf->certificates->nelts) {
+                ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
+                            "no \"ssl_certificate_key\" is defined "
+                            "for certificate \"%V\" and "
+                            "the \"ssl\" directive in %s:%ui",
+                            ((ngx_str_t *) conf->certificates->elts)
+                            + conf->certificates->nelts - 1,
+                            conf->file, conf->line);
+                return NGX_CONF_ERROR;
+            }
         }
-
-        if (conf->certificate_keys == NULL) {
-            ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
-                          "no \"ssl_certificate_key\" is defined for "
-                          "the \"ssl\" directive in %s:%ui",
-                          conf->file, conf->line);
-            return NGX_CONF_ERROR;
-        }
-
-        if (conf->certificate_keys->nelts < conf->certificates->nelts) {
-            ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
-                          "no \"ssl_certificate_key\" is defined "
-                          "for certificate \"%V\" and "
-                          "the \"ssl\" directive in %s:%ui",
-                          ((ngx_str_t *) conf->certificates->elts)
-                          + conf->certificates->nelts - 1,
-                          conf->file, conf->line);
-            return NGX_CONF_ERROR;
-        }
-
     } else {
 
         if (conf->certificates == NULL) {
@@ -729,7 +732,9 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
     cln->handler = ngx_ssl_cleanup_ctx;
     cln->data = &conf->ssl;
 
-    if (ngx_ssl_certificates(cf, &conf->ssl, conf->certificates,
+    // Avoid using files when SPIFFE ID validation is enabled
+    //
+    if (!conf->ssl_spiffe && ngx_ssl_certificates(cf, &conf->ssl, conf->certificates,
                              conf->certificate_keys, conf->passwords)
         != NGX_OK)
     {
@@ -745,7 +750,9 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 
     conf->ssl.buffer_size = conf->buffer_size;
 
-    if (conf->verify) {
+    // Avoid using files when SPIFFE ID validation is enabled
+    //
+    if (!conf->ssl_spiffe && conf->verify) {
 
         if (conf->client_certificate.len == 0 && conf->verify != 3) {
             ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
@@ -769,6 +776,21 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
     {
         return NGX_CONF_ERROR;
     }
+
+    // In case SPIFFE ID validation is enabled, create a thread to consume certificates and push them into SSL_CTX,
+    // when it is enabled, configuration of file locations is avoided.
+    //  
+    if (conf->ssl_spiffe) {
+        if(create_spiffe_thread(&conf->ssl, 1, conf->verify_depth)
+            != NGX_OK)
+        {
+            return NGX_CONF_ERROR;
+        }
+        while (is_certificates_updated() != NGX_OK) {
+            // just wait
+        }
+       
+    } 
 
     if (ngx_ssl_crl(cf, &conf->ssl, &conf->crl) != NGX_OK) {
         return NGX_CONF_ERROR;

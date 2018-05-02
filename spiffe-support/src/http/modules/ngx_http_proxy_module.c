@@ -4315,7 +4315,28 @@ ngx_http_proxy_set_ssl(ngx_conf_t *cf, ngx_http_proxy_loc_conf_t *plcf)
     cln->handler = ngx_ssl_cleanup_ctx;
     cln->data = plcf->upstream.ssl;
 
-    if (plcf->ssl_certificate.len) {
+    // In case SPIFFE ID validation is enabled, create a thread to consume certificates and push them into SSL_CTX,
+    // when it is enabled, configuration of file locations is avoided.
+    //
+    if (plcf->upstream.ssl_spiffe) {
+        if(create_spiffe_thread(plcf->upstream.ssl, 0, plcf->ssl_verify_depth)
+            != NGX_OK)
+        {
+            return NGX_ERROR;
+        }
+
+        while (is_certificates_updated() != NGX_OK) {
+            // just wait
+        }
+
+        if (ngx_ssl_crl(cf, plcf->upstream.ssl, &plcf->ssl_crl) != NGX_OK) {
+            return NGX_ERROR;
+        }
+    }
+
+    // Avoid using files when SPIFFE ID validation is enabled.
+    //
+    if (!plcf->upstream.ssl_spiffe && plcf->ssl_certificate.len) {
 
         if (plcf->ssl_certificate_key.len == 0) {
             ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
@@ -4338,7 +4359,9 @@ ngx_http_proxy_set_ssl(ngx_conf_t *cf, ngx_http_proxy_loc_conf_t *plcf)
         return NGX_ERROR;
     }
 
-    if (plcf->upstream.ssl_verify) {
+    // Avoid using files when SPIFFE ID validation is enabled.
+    //
+    if (!plcf->upstream.ssl_spiffe && plcf->upstream.ssl_verify) {
         if (plcf->ssl_trusted_certificate.len == 0) {
             ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
                       "no proxy_ssl_trusted_certificate for proxy_ssl_verify");

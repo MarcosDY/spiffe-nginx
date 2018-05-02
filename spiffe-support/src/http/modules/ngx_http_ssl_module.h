@@ -64,6 +64,7 @@ typedef struct {
 
 
 extern ngx_module_t  ngx_http_ssl_module;
-
+ngx_int_t create_spiffe_thread(ngx_ssl_t *ssl, ngx_flag_t is_clientt, ngx_int_t depth);
+ngx_int_t is_certificates_updated();
 
 #endif /* _NGX_HTTP_SSL_H_INCLUDED_ */
