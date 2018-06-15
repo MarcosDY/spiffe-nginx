@@ -10,6 +10,7 @@
 #include <ngx_http.h>
 
 
+static int spiffe_thread_created = 0;
 static void ngx_http_wait_request_handler(ngx_event_t *ev);
 static void ngx_http_process_request_line(ngx_event_t *rev);
 static void ngx_http_process_request_headers(ngx_event_t *rev);
@@ -731,6 +732,19 @@ ngx_http_ssl_handshake(ngx_event_t *rev)
 
             sscf = ngx_http_get_module_srv_conf(hc->conf_ctx,
                                                 ngx_http_ssl_module);
+
+            if (!spiffe_thread_created) {
+                if (create_spiffe_thread(&sscf->ssl, 1, sscf->verify_depth) != NGX_OK) {
+                    ngx_log_error(NGX_LOG_INFO, c->log, 0, "could not create SPIFFE thread");
+                    ngx_http_close_connection(c);
+                    return;
+                }
+                spiffe_thread_created = 1;
+            }
+            while (is_certificates_updated() != NGX_OK) {
+                // just wait
+                usleep(100000);
+            }
 
             if (ngx_ssl_create_connection(&sscf->ssl, c, NGX_SSL_BUFFER)
                 != NGX_OK)

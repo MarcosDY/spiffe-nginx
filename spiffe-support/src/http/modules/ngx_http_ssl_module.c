@@ -777,21 +777,6 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
         return NGX_CONF_ERROR;
     }
 
-    // In case SPIFFE ID validation is enabled, create a thread to consume certificates and push them into SSL_CTX,
-    // when it is enabled, configuration of file locations is avoided.
-    //  
-    if (conf->ssl_spiffe) {
-        if(create_spiffe_thread(&conf->ssl, 1, conf->verify_depth)
-            != NGX_OK)
-        {
-            return NGX_CONF_ERROR;
-        }
-        while (is_certificates_updated() != NGX_OK) {
-            // just wait
-        }
-       
-    } 
-
     if (ngx_ssl_crl(cf, &conf->ssl, &conf->crl) != NGX_OK) {
         return NGX_CONF_ERROR;
     }

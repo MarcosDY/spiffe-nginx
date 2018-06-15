@@ -5,8 +5,6 @@ extern "C" {
 }
 
 #include <thread>
-#include <mutex>
-#include <signal.h>
 #include <sstream>
 
 #include "c-spiffe.h"
@@ -16,20 +14,14 @@ extern "C" {
 #include <openssl/x509.h>
 #include <openssl/evp.h>
 
-using grpc::Channel;
-using grpc::ClientContext;
-using grpc::ClientReader;
-using grpc::ClientReaderWriter;
-using grpc::ClientWriter;
-using grpc::Status;
-
 #define INITIAL_DELAY 1000000 // microseconds
 #define MAX_DELAY INITIAL_DELAY * 60
-useconds_t retry_delay = INITIAL_DELAY;
+useconds_t retry_delay_svids = INITIAL_DELAY;
 
-bool firstFetch = true;
-void updatedCallback(X509SVIDResponse x509SVIDResponse);
-spiffe::WorkloadAPIClient workloadClient(updatedCallback);
+using grpc::StatusCode;
+
+void svid_updated_callback(X509SVIDResponse x509SVIDResponse);
+spiffe::WorkloadAPIClient workloadClient(svid_updated_callback);
 static void log(std::string message, std::string arg);
 static void log(std::string message);
 static int xname_cmp(const X509_NAME * const *a, const X509_NAME * const *b);
@@ -73,12 +65,12 @@ static void * ngx_http_fetch_spiffe_certs_create_conf(ngx_conf_t *cf)
     return scf;
 }
 
-void updatedCallback(X509SVIDResponse x509SVIDResponse) {
+void svid_updated_callback(X509SVIDResponse x509SVIDResponse) {
     log("fetched X509SVID with SPIFFE ID: ", x509SVIDResponse.svids(0).spiffe_id());
     ngx_ssl_thread_config.updated = false;
     
     // Successfull response received. Reset delay
-    retry_delay = INITIAL_DELAY;
+    retry_delay_svids = INITIAL_DELAY;
 
     ngx_ssl_t *ngx_ssl = *ngx_ssl_thread_config.ngx_ssl;
 
@@ -102,11 +94,6 @@ void updatedCallback(X509SVIDResponse x509SVIDResponse) {
         ngx_ssl_spiffe_reload_trusted_certificate(ngx_ssl, x509SVIDResponse.svids(0).bundle());
     }
 
-    if (!firstFetch) {
-        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_ssl->log, 0, "Stop fetching x509 SVIDs");
-        workloadClient.StopFetchingX509SVIDs();
-    }
-    firstFetch = false;
     ngx_ssl_thread_config.updated = true;
 }
 
@@ -116,8 +103,7 @@ void fetch_svids(ngx_ssl_t *ssl) {
     // update thread config with provided ssl
     ngx_ssl_thread_config.ngx_ssl = &ssl;
     
-    firstFetch = true;
-    retry_delay = INITIAL_DELAY;
+    retry_delay_svids = INITIAL_DELAY;
     std::string socket_address = (const char*)configuration.ssl_spiffe_sock.data;
     std::string const SOCKET_PATH_ERR = "Invalid socket path for Workload API endpoint: ";
     if (socket_address.length() == 0) {
@@ -140,22 +126,20 @@ void fetch_svids(ngx_ssl_t *ssl) {
             ". Error message: " <<
             workloadClient.GetFetchX509SVIDsStatus().error_message();
         log(msg.str());
-        ngx_log_debug1(NGX_LOG_DEBUG_EVENT, ssl->log, 0, "Waiting for %i seconds to retray", retry_delay);
-        usleep(retry_delay);
-        if (retry_delay < MAX_DELAY) {
-            retry_delay += retry_delay;
+        ngx_log_debug1(NGX_LOG_DEBUG_EVENT, ssl->log, 0, "Waiting for %i microseconds to retray", retry_delay_svids);
+        usleep(retry_delay_svids);
+        retry_delay_svids += retry_delay_svids;
+        if (retry_delay_svids > MAX_DELAY) {
+            retry_delay_svids = MAX_DELAY;
         }
         goto Start;
     }
-
-    kill(::getpid(), SIGHUP);
 }
 
 /**
  * return NGX_OK in case certificate was reloaded into SSL_CTX.
  */
 ngx_int_t is_certificates_updated() {
-
     if (ngx_ssl_thread_config.updated) {
         return NGX_OK;
     }
@@ -178,7 +162,6 @@ ngx_int_t create_spiffe_thread(ngx_ssl_t *ssl, ngx_flag_t is_client, ngx_int_t d
 
     return NGX_OK;
 }
-
 
 static char * ngx_http_fetch_spiffe_certs_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 {
@@ -484,12 +467,14 @@ ngx_ssl_spiffe_add_all_ca(ngx_ssl_t *ngx_ssl, std::string bundle_der) {
         }
 
         if(!X509_STORE_add_cert(store, x509)) {
-            log("could not X509_STORE_add_cert");    
+            auto error = ERR_get_error();
+            // Check for duplicate root certificate
+            if (ERR_GET_REASON(error) != X509_R_CERT_ALREADY_IN_HASH_TABLE) {
+                log("could not add root certificate to ssl context.");
             X509_free(x509); 
             return NGX_ERROR;
-            
+            }
         }
-
         X509_free(x509);
     }
 
