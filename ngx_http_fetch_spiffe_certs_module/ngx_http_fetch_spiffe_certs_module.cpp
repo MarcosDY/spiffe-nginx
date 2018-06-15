@@ -82,6 +82,16 @@ void updatedCallback(X509SVIDResponse x509SVIDResponse) {
 
     ngx_ssl_t *ngx_ssl = *ngx_ssl_thread_config.ngx_ssl;
 
+    int svids_size = x509SVIDResponse.svids_size();
+
+    if (svids_size < 1) {
+        ngx_log_error(NGX_LOG_ERR, ngx_ssl->log, 0, "No SVID was returned.");
+    }
+
+    if (svids_size > 1) {
+        ngx_log_error(NGX_LOG_WARN, ngx_ssl->log, 0, "Only first SVID will be used from %i svids returned from GRPC call.", svids_size);
+    }
+
     // reload certificate and key into SSL_CTX
     ngx_ssl_spiffe_reload_certificate(ngx_ssl, x509SVIDResponse.svids(0).x509_svid(), x509SVIDResponse.svids(0).x509_svid_key());
 
@@ -93,6 +103,7 @@ void updatedCallback(X509SVIDResponse x509SVIDResponse) {
     }
 
     if (!firstFetch) {
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_ssl->log, 0, "Stop fetching x509 SVIDs");
         workloadClient.StopFetchingX509SVIDs();
     }
     firstFetch = false;
@@ -129,6 +140,7 @@ void fetch_svids(ngx_ssl_t *ssl) {
             ". Error message: " <<
             workloadClient.GetFetchX509SVIDsStatus().error_message();
         log(msg.str());
+        ngx_log_debug1(NGX_LOG_DEBUG_EVENT, ssl->log, 0, "Waiting for %i seconds to retray", retry_delay);
         usleep(retry_delay);
         if (retry_delay < MAX_DELAY) {
             retry_delay += retry_delay;
@@ -155,7 +167,7 @@ ngx_int_t is_certificates_updated() {
  *  Create a thread to automatically consume gRPC and load certificates into SSL_CTX
  */
 ngx_int_t create_spiffe_thread(ngx_ssl_t *ssl, ngx_flag_t is_client, ngx_int_t depth) {
-    
+    ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ssl->log, 0, "Creating spiffe thread.");
     ngx_ssl_thread_config.updated = false;
     
     ngx_ssl_thread_config.is_client_certificate = (is_client == 1);
@@ -174,7 +186,10 @@ static char * ngx_http_fetch_spiffe_certs_merge_srv_conf(ngx_conf_t *cf, void *p
     ngx_http_fetch_spiffe_certs_srv_conf_t *conf = (ngx_http_fetch_spiffe_certs_srv_conf_t*)child;
 
     ngx_conf_merge_str_value(conf->ssl_spiffe_sock, prev->ssl_spiffe_sock, "");
-   
+    
+    if (conf->ssl_spiffe_sock.len < 1) {
+        ngx_log_error(NGX_LOG_WARN, cf->log, 0, "ssl_spiffe_sock was no provided.");
+    }
     configuration.ssl_spiffe_sock = conf->ssl_spiffe_sock;
     
     return NGX_CONF_OK;
@@ -232,6 +247,7 @@ ngx_ssl_spiffe_reload_certificate(ngx_ssl_t *ngx_ssl, std::string cert_der, std:
     ngx_ssl_t *ssl;
     unsigned char *buf, *p;
 
+    ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_ssl->log, 0, "Reloading certificates.");
     // Set ssl with provided ngx_ssl
     //
     ssl = ngx_ssl;
@@ -307,6 +323,8 @@ ngx_ssl_spiffe_reload_certificate(ngx_ssl_t *ngx_ssl, std::string cert_der, std:
     len = key_der.size();
 
     for ( ;; ) {
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_ssl->log, 0, "Reloading keys.");
+
         // Transform DER to EVP_KEY
         //
         evp =  d2i_AutoPrivateKey(NULL, (const unsigned char**)&p,
@@ -323,6 +341,8 @@ ngx_ssl_spiffe_reload_certificate(ngx_ssl_t *ngx_ssl, std::string cert_der, std:
         }
 
         if (--tries) {
+            ngx_ssl_error(NGX_LOG_WARN, ssl->log, 0,
+                      (char *) "SSL_CTX_use_PrivateKey() failed, retrying");
             ERR_clear_error();
             SSL_CTX_set_default_passwd_cb_userdata(ssl->ctx, ++pwd);
             continue;
@@ -360,6 +380,8 @@ ngx_ssl_spiffe_reload_client_certificate(ngx_ssl_t *ngx_ssl, std::string bundle_
     unsigned char *buf, *p;
     STACK_OF(X509_NAME) *sk;
 
+    ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_ssl->log, 0, "Reloading client certificate.");
+
     ssl = ngx_ssl;
     sk = sk_X509_NAME_new(xname_cmp);
 
@@ -379,6 +401,7 @@ ngx_ssl_spiffe_reload_client_certificate(ngx_ssl_t *ngx_ssl, std::string bundle_
     // Extract all X509_NAME from certificates inside bundle der and push them into STACK_OF(X509_NAME)
     //
     while ((x509 = d2i_X509(NULL, (const unsigned char**)&p, len)) != NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_ssl->log, 0, "Extracting X509_NAME from bundle.");
         if (x509 == NULL) {
             log("d2i_X509 error. ");
             X509_free(x509);    
@@ -409,6 +432,8 @@ ngx_ssl_spiffe_reload_trusted_certificate(ngx_ssl_t *ngx_ssl, std::string bundle
     ngx_ssl_t *ssl;
     ssl = ngx_ssl;
 
+    ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_ssl->log, 0, "Reloading trusted certificate.");
+
     // Set verify methods.
     //
     SSL_CTX_set_verify_depth(ssl->ctx, ngx_ssl_thread_config.depth);
@@ -433,6 +458,7 @@ ngx_ssl_spiffe_add_all_ca(ngx_ssl_t *ngx_ssl, std::string bundle_der) {
     X509 *x509;
     unsigned char *buf, *p;
 
+    ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_ssl->log, 0, "Adding certificates from bundle.");
     ssl = ngx_ssl;
 
     int len = bundle_der.size();
