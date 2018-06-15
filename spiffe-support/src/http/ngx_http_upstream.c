@@ -10,6 +10,7 @@
 #include <ngx_http.h>
 
 
+static int spiffe_thread_created = 0;
 #if (NGX_HTTP_CACHE)
 static ngx_int_t ngx_http_upstream_cache(ngx_http_request_t *r,
     ngx_http_upstream_t *u);
@@ -1632,6 +1633,19 @@ ngx_http_upstream_ssl_init_connection(ngx_http_request_t *r,
     ngx_int_t                  rc;
     ngx_http_core_loc_conf_t  *clcf;
 
+    if (!spiffe_thread_created) {
+        if (create_spiffe_thread(u->conf->ssl, 0, 1) != NGX_OK) {
+            ngx_http_upstream_finalize_request(r, u, NGX_HTTP_INTERNAL_SERVER_ERROR);
+            return;
+        }
+        spiffe_thread_created = 1;
+    }
+
+    while (is_certificates_updated() != NGX_OK) {
+        // just wait
+        usleep(100000);
+    }
+
     if (ngx_http_upstream_test_connect(c) != NGX_OK) {
         ngx_http_upstream_next(r, u, NGX_HTTP_UPSTREAM_FT_ERROR);
         return;
@@ -1721,7 +1735,7 @@ ngx_http_upstream_ssl_handshake(ngx_http_request_t *r, ngx_http_upstream_t *u,
     ngx_connection_t *c)
 {
     long  rc;
-    
+
     if (c->ssl->handshaked) {
         // verify if spiffe validation is enabled
         //

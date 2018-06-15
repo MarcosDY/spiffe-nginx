@@ -4319,16 +4319,6 @@ ngx_http_proxy_set_ssl(ngx_conf_t *cf, ngx_http_proxy_loc_conf_t *plcf)
     // when it is enabled, configuration of file locations is avoided.
     //
     if (plcf->upstream.ssl_spiffe) {
-        if(create_spiffe_thread(plcf->upstream.ssl, 0, plcf->ssl_verify_depth)
-            != NGX_OK)
-        {
-            return NGX_ERROR;
-        }
-
-        while (is_certificates_updated() != NGX_OK) {
-            // just wait
-        }
-
         if (ngx_ssl_crl(cf, plcf->upstream.ssl, &plcf->ssl_crl) != NGX_OK) {
             return NGX_ERROR;
         }
