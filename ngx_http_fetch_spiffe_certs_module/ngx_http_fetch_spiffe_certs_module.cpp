@@ -77,11 +77,11 @@ void svid_updated_callback(X509SVIDResponse x509SVIDResponse) {
     int svids_size = x509SVIDResponse.svids_size();
 
     if (svids_size < 1) {
-        ngx_log_error(NGX_LOG_ERR, ngx_ssl->log, 0, "No SVID was returned.");
+        log("Error: No SVID was returned.");
     }
 
     if (svids_size > 1) {
-        ngx_log_error(NGX_LOG_WARN, ngx_ssl->log, 0, "Only first SVID will be used from %i svids returned from GRPC call.", svids_size);
+        log("Error: Only first SVID will be used from  svids returned from GRPC call.");
     }
 
     // reload certificate and key into SSL_CTX
@@ -171,7 +171,7 @@ static char * ngx_http_fetch_spiffe_certs_merge_srv_conf(ngx_conf_t *cf, void *p
     ngx_conf_merge_str_value(conf->ssl_spiffe_sock, prev->ssl_spiffe_sock, "");
     
     if (conf->ssl_spiffe_sock.len < 1) {
-        ngx_log_error(NGX_LOG_WARN, cf->log, 0, "ssl_spiffe_sock was no provided.");
+        log("Error: ssl_spiffe_sock was no provided.");
     }
     configuration.ssl_spiffe_sock = conf->ssl_spiffe_sock;
     
@@ -188,7 +188,7 @@ static void log(std::string message, std::string arg)
     time_t ctt = time(0);
     char now[30];
     strftime(now, 30, "%Y/%m/%d %H:%M:%S", localtime(&ctt));
-    std::cout << now << " [spiffe] " << getpid() << ": " << message << arg << std::endl;
+    fprintf(stderr, "%s [spiffe] %i: %s %s \n", now, getpid(), message.c_str(), arg.c_str()); 
 }
 
 static ngx_http_module_t ngx_http_fetch_spiffe_certs_module_ctx = {
@@ -242,8 +242,7 @@ ngx_ssl_spiffe_reload_certificate(ngx_ssl_t *ngx_ssl, std::string cert_der, std:
     p = buf;
     x509 = d2i_X509(NULL, (const unsigned char**)&p, len);
     if (x509 == NULL) {
-        ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
-                    (char *) "Could not extract certificate from svid");
+        log("Error: Could not extract certificate from svid");
         
         return NGX_ERROR;
     }
@@ -251,8 +250,7 @@ ngx_ssl_spiffe_reload_certificate(ngx_ssl_t *ngx_ssl, std::string cert_der, std:
     // Use provided x509 certificate.
     //
     if (SSL_CTX_use_certificate(ssl->ctx, x509) == 0) {     
-        ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
-                      (char *) "SSL_CTX_use_certificate failed");
+        log("Error: SSL_CTX_use_certificate failed");
                       
         X509_free(x509);
         return NGX_ERROR;
@@ -264,8 +262,7 @@ ngx_ssl_spiffe_reload_certificate(ngx_ssl_t *ngx_ssl, std::string cert_der, std:
     if (X509_set_ex_data(x509, ngx_ssl_certificate_name_index, certificateName.data)
         == 0)
     {
-        
-        ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0, (char *) "X509_set_ex_data() failed");
+        log("Error: X509_set_ex_data() failed");
         
         X509_free(x509);
         return NGX_ERROR;
@@ -277,8 +274,7 @@ ngx_ssl_spiffe_reload_certificate(ngx_ssl_t *ngx_ssl, std::string cert_der, std:
                       SSL_CTX_get_ex_data(ssl->ctx, ngx_ssl_certificate_index))
         == 0)
     { 
-        
-        ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0, (char *) "X509_set_ex_data() failed");
+        log("Error: X509_set_ex_data() failed");
         
         X509_free(x509);
         return NGX_ERROR;
@@ -289,9 +285,8 @@ ngx_ssl_spiffe_reload_certificate(ngx_ssl_t *ngx_ssl, std::string cert_der, std:
     if (SSL_CTX_set_ex_data(ssl->ctx, ngx_ssl_certificate_index, x509)
         == 0)
     {
-        ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
-                      (char *) "SSL_CTX_set_ex_data() failed");
-                    
+        log("Error: SSL_CTX_set_ex_data() failed");
+                     
         X509_free(x509);
         return NGX_ERROR;
     }
@@ -324,16 +319,13 @@ ngx_ssl_spiffe_reload_certificate(ngx_ssl_t *ngx_ssl, std::string cert_der, std:
         }
 
         if (--tries) {
-            ngx_ssl_error(NGX_LOG_WARN, ssl->log, 0,
-                      (char *) "SSL_CTX_use_PrivateKey() failed, retrying");
+            log("Error: SSL_CTX_use_PrivateKey() failed, retrying");
             ERR_clear_error();
             SSL_CTX_set_default_passwd_cb_userdata(ssl->ctx, ++pwd);
             continue;
         }
-  
-        ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
-                      (char *) "SSL_CTX_use_PrivateKey() failed");
-                    
+        log("Error: SSL_CTX_use_PrivateKey() failed");
+                   
         return NGX_ERROR;
     }
     
@@ -414,7 +406,6 @@ ngx_ssl_spiffe_reload_trusted_certificate(ngx_ssl_t *ngx_ssl, std::string bundle
 {
     ngx_ssl_t *ssl;
     ssl = ngx_ssl;
-
     ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_ssl->log, 0, "Reloading trusted certificate.");
 
     // Set verify methods.
@@ -440,7 +431,7 @@ ngx_ssl_spiffe_add_all_ca(ngx_ssl_t *ngx_ssl, std::string bundle_der) {
     X509_STORE *store = NULL;
     X509 *x509;
     unsigned char *buf, *p;
-
+    
     ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_ssl->log, 0, "Adding certificates from bundle.");
     ssl = ngx_ssl;
 
