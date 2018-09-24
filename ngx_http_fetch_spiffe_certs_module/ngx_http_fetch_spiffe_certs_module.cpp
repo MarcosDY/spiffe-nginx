@@ -486,7 +486,7 @@ xname_cmp(const X509_NAME * const *a, const X509_NAME * const *b)
 }
 
 /**
- * Get a bundle that contains svid's bundle and all federated bundles that svid is federated with.
+ * Get a bundle that has the concatenation of the SVID's bundle and the bundles of all the trust domains that the SVID federates with.
  */
 ::std::string get_bundle(X509SVIDResponse x509SVIDResponse) {
     ::std::string bundle = "";
@@ -499,13 +499,13 @@ xname_cmp(const X509_NAME * const *a, const X509_NAME * const *b)
     // Add svid bundle
     bundle += svid.bundle();
 
-    // Iterate federateds with vector and add bundles to returned bundle.
+    // Iterate through the "federates with" vector to add federated bundles
     for (std::string federated : svid.federates_with()) {
         it = federatedBundles.find(federated);
 
         if (it == federatedBundles.end()) {
             std::stringstream msg;
-            msg << "Federated bundle " << federated << " does not exist ";
+            msg << "Federated bundle for trust domain " << federated << " does not exist";
             log(msg.str());
             continue;
         } 
