@@ -1,4 +1,5 @@
 .cache
 /nginx
 /nginx-*
-
+workload.grpc.pb.*
+workload.pb.*
