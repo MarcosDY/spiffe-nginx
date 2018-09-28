@@ -32,6 +32,7 @@ ngx_int_t ngx_ssl_spiffe_reload_certificate(ngx_ssl_t *ngx_ssl, std::string cert
 ngx_int_t ngx_ssl_spiffe_reload_client_certificate(ngx_ssl_t *ngx_ssl, std::string bundle_der);
 ngx_int_t ngx_ssl_spiffe_reload_trusted_certificate(ngx_ssl_t *ngx_ssl, std::string bundle_der);
 ngx_int_t ngx_ssl_spiffe_add_all_ca(ngx_ssl_t *ngx_ssl, std::string bundle_der);
+::std::string get_bundle(X509SVIDResponse x509SVIDResponse);
 
 typedef struct {
     ngx_ssl_t   **ngx_ssl;
@@ -87,11 +88,13 @@ void svid_updated_callback(X509SVIDResponse x509SVIDResponse) {
     // reload certificate and key into SSL_CTX
     ngx_ssl_spiffe_reload_certificate(ngx_ssl, x509SVIDResponse.svids(0).x509_svid(), x509SVIDResponse.svids(0).x509_svid_key());
 
+    ::std::string bundle = get_bundle(x509SVIDResponse);
+
     // reload trusted or client certificate into SSL_CTX
     if (ngx_ssl_thread_config.is_client_certificate) {
-        ngx_ssl_spiffe_reload_client_certificate(ngx_ssl,  x509SVIDResponse.svids(0).bundle());
+        ngx_ssl_spiffe_reload_client_certificate(ngx_ssl, bundle);
     } else {
-        ngx_ssl_spiffe_reload_trusted_certificate(ngx_ssl, x509SVIDResponse.svids(0).bundle());
+        ngx_ssl_spiffe_reload_trusted_certificate(ngx_ssl, bundle);
     }
 
     ngx_ssl_thread_config.updated = true;
@@ -375,7 +378,7 @@ ngx_ssl_spiffe_reload_client_certificate(ngx_ssl_t *ngx_ssl, std::string bundle_
 
     // Extract all X509_NAME from certificates inside bundle der and push them into STACK_OF(X509_NAME)
     //
-    while ((x509 = d2i_X509(NULL, (const unsigned char**)&p, len)) != NULL) {
+    while ((x509 = d2i_X509(NULL, (const unsigned char**)&p, len)) != NULL) {  
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_ssl->log, 0, "Extracting X509_NAME from bundle.");
         if (x509 == NULL) {
             log("d2i_X509 error. ");
@@ -480,4 +483,33 @@ static int
 xname_cmp(const X509_NAME * const *a, const X509_NAME * const *b)
 {
 	return (X509_NAME_cmp(*a, *b));
+}
+
+/**
+ * Get a bundle that has the concatenation of the SVID's bundle and the bundles of all the trust domains that the SVID federates with.
+ */
+::std::string get_bundle(X509SVIDResponse x509SVIDResponse) {
+    ::std::string bundle = "";
+    ::std::string federatedBundle = "";
+    ::google::protobuf::Map< ::std::string, ::std::string >::iterator it;
+
+    ::google::protobuf::Map< ::std::string, ::std::string > federatedBundles = x509SVIDResponse.federated_bundles();
+    ::X509SVID svid = x509SVIDResponse.svids(0);
+
+    // Add svid bundle
+    bundle += svid.bundle();
+
+    // Iterate through the "federates with" vector to add federated bundles
+    for (std::string federated : svid.federates_with()) {
+        it = federatedBundles.find(federated);
+
+        if (it == federatedBundles.end()) {
+            std::stringstream msg;
+            msg << "Federated bundle for trust domain " << federated << " does not exist";
+            log(msg.str());
+            continue;
+        } 
+        bundle += it->second;
+    }
+    return bundle;
 }
