@@ -46,6 +46,8 @@ case $1 in
 			--with-cc-opt="-fPIE" --with-ld-opt="-fpie -static" \
 			--with-debug \
 			--with-http_ssl_module \
+			--with-stream \
+			--with-stream_ssl_module \
 			--add-module=/opt/nginx-dev/ngx_http_fetch_spiffe_certs_module
 		set +x
 		update_nginx_modules

@@ -1941,26 +1941,14 @@ ngx_http_process_request(ngx_http_request_t *r)
                     ASN1_STRING             *str;
                     GENERAL_NAME            *sanName;
                     STACK_OF(GENERAL_NAME)  *san_names = NULL;
-                    ngx_str_t               *accepted_elts;
-                    ngx_uint_t              i, found;
 
                     san_names = X509_get_ext_d2i((X509 *) cert, NID_subject_alt_name, NULL, NULL);
                     sanName = sk_GENERAL_NAME_value(san_names, 0); 
                     str = sanName->d.dNSName;
     
-                    accepted_elts = sscf->ssl_spiffe_accept->elts;
-
-                    found = 0;
                     // Vefify that the SPIFFE ID is in the accepted list
                     //
-                    for (i = 0; i < sscf->ssl_spiffe_accept->nelts; i++) {        
-                        if (ngx_strcmp(str->data, accepted_elts[i].data) == 0) {
-                            found = 1;
-                        
-                        }
-                    }
-
-                    if (found != 1 ) {
+                    if (!ngx_is_spiffe_id_accepted(str->data, sscf->ssl_spiffe_accept)) {
                         ngx_log_error(NGX_LOG_INFO, c->log, 0,
                                     "SPIFFE ID is not allowed: \"%s\",", str->data);
 

@@ -8,6 +8,7 @@ extern "C" {
 #include <sstream>
 
 #include "c-spiffe.h"
+#include "ngx_common_spiffe_module.h"
 
 #include <openssl/ssl.h>
 #include <openssl/rsa.h>
@@ -20,8 +21,8 @@ useconds_t retry_delay_svids = INITIAL_DELAY;
 
 using grpc::StatusCode;
 
-void svid_updated_callback(X509SVIDResponse x509SVIDResponse);
-spiffe::WorkloadAPIClient workloadClient(svid_updated_callback);
+void svid_http_updated_callback(X509SVIDResponse x509SVIDResponse);
+spiffe::WorkloadAPIClient workloadClient(svid_http_updated_callback);
 static void log(std::string message, std::string arg);
 static void log(std::string message);
 static int xname_cmp(const X509_NAME * const *a, const X509_NAME * const *b);
@@ -34,14 +35,7 @@ ngx_int_t ngx_ssl_spiffe_reload_trusted_certificate(ngx_ssl_t *ngx_ssl, std::str
 ngx_int_t ngx_ssl_spiffe_add_all_ca(ngx_ssl_t *ngx_ssl, std::string bundle_der);
 ::std::string get_bundle(X509SVIDResponse x509SVIDResponse);
 
-typedef struct {
-    ngx_ssl_t   **ngx_ssl;
-    bool is_client_certificate = false;
-    ngx_int_t depth;
-    bool updated = false;
-} ngx_ssl_thread_config_t;
-
-static ngx_ssl_thread_config_t ngx_ssl_thread_config;
+static ngx_ssl_thread_config_t ngx_http_ssl_thread_config;
 
 typedef struct {
     ngx_str_t ssl_spiffe_sock;
@@ -66,84 +60,19 @@ static void * ngx_http_fetch_spiffe_certs_create_conf(ngx_conf_t *cf)
     return scf;
 }
 
-void svid_updated_callback(X509SVIDResponse x509SVIDResponse) {
-    log("fetched X509SVID with SPIFFE ID: ", x509SVIDResponse.svids(0).spiffe_id());
-    ngx_ssl_thread_config.updated = false;
-    
-    // Successfull response received. Reset delay
-    retry_delay_svids = INITIAL_DELAY;
-
-    ngx_ssl_t *ngx_ssl = *ngx_ssl_thread_config.ngx_ssl;
-
-    int svids_size = x509SVIDResponse.svids_size();
-
-    if (svids_size < 1) {
-        log("Error: No SVID was returned.");
-    }
-
-    if (svids_size > 1) {
-        log("Error: Only first SVID will be used from  svids returned from GRPC call.");
-    }
-
-    // reload certificate and key into SSL_CTX
-    ngx_ssl_spiffe_reload_certificate(ngx_ssl, x509SVIDResponse.svids(0).x509_svid(), x509SVIDResponse.svids(0).x509_svid_key());
-
-    ::std::string bundle = get_bundle(x509SVIDResponse);
-
-    // reload trusted or client certificate into SSL_CTX
-    if (ngx_ssl_thread_config.is_client_certificate) {
-        ngx_ssl_spiffe_reload_client_certificate(ngx_ssl, bundle);
-    } else {
-        ngx_ssl_spiffe_reload_trusted_certificate(ngx_ssl, bundle);
-    }
-
-    ngx_ssl_thread_config.updated = true;
+void svid_http_updated_callback(X509SVIDResponse x509SVIDResponse) {
+    svid_updated_callback(x509SVIDResponse, &ngx_http_ssl_thread_config);
 }
 
-void fetch_svids(ngx_ssl_t *ssl) {
-    log("fetching SVIDs");
-    
-    // update thread config with provided ssl
-    ngx_ssl_thread_config.ngx_ssl = &ssl;
-    
-    retry_delay_svids = INITIAL_DELAY;
-    std::string socket_address = (const char*)configuration.ssl_spiffe_sock.data;
-    std::string const SOCKET_PATH_ERR = "Invalid socket path for Workload API endpoint: ";
-    if (socket_address.length() == 0) {
-        log(SOCKET_PATH_ERR, "empty path");
-        return;
-    }
-
-    if (socket_address.at(0) != '/') {
-        log(SOCKET_PATH_ERR, "path not absolute");
-        return;
-    }    
-    workloadClient.SetSocketAddress("unix:" + socket_address);
-
-    Start:
-    workloadClient.FetchX509SVIDs();
-    if (!workloadClient.GetFetchX509SVIDsStatus().ok()) {
-        std::stringstream msg;
-        msg << "FetchX509SVID rpc failed. Error code: " <<
-            workloadClient.GetFetchX509SVIDsStatus().error_code() <<
-            ". Error message: " <<
-            workloadClient.GetFetchX509SVIDsStatus().error_message();
-        log(msg.str());
-        ngx_log_debug1(NGX_LOG_DEBUG_EVENT, ssl->log, 0, "Waiting for %i microseconds to retray", retry_delay_svids);
-        usleep(retry_delay_svids);
-        retry_delay_svids += retry_delay_svids;
-        if (retry_delay_svids > MAX_DELAY) {
-            retry_delay_svids = MAX_DELAY;
-        }
-        goto Start;
-    }
+void fetch_http_svids(ngx_ssl_t *ssl) {
+    fetch_svids(ssl, &ngx_http_ssl_thread_config, &workloadClient, &configuration.ssl_spiffe_sock);
 }
 
 /**
  * return NGX_OK in case certificate was reloaded into SSL_CTX.
  */
 ngx_int_t is_certificates_updated() {
-    if (ngx_ssl_thread_config.updated) {
+    if (ngx_http_ssl_thread_config.svids_updated) {
         return NGX_OK;
     }
 
@@ -155,12 +84,12 @@ ngx_int_t is_certificates_updated() {
  */
 ngx_int_t create_spiffe_thread(ngx_ssl_t *ssl, ngx_flag_t is_client, ngx_int_t depth) {
     ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ssl->log, 0, "Creating spiffe thread.");
-    ngx_ssl_thread_config.updated = false;
+    ngx_http_ssl_thread_config.svids_updated = false;
     
-    ngx_ssl_thread_config.is_client_certificate = (is_client == 1);
-    ngx_ssl_thread_config.depth = depth;
+    ngx_http_ssl_thread_config.is_client_certificate = (is_client == 1);
+    ngx_http_ssl_thread_config.depth = depth;
 
-    std::thread fetch_svids_thread(fetch_svids, ssl);
+    std::thread fetch_svids_thread(fetch_http_svids, ssl);
     fetch_svids_thread.detach();
 
     return NGX_OK;
@@ -170,6 +99,8 @@ static char * ngx_http_fetch_spiffe_certs_merge_srv_conf(ngx_conf_t *cf, void *p
 {
     ngx_http_fetch_spiffe_certs_srv_conf_t *prev = (ngx_http_fetch_spiffe_certs_srv_conf_t*)parent;
     ngx_http_fetch_spiffe_certs_srv_conf_t *conf = (ngx_http_fetch_spiffe_certs_srv_conf_t*)child;
+
+    ngx_http_ssl_thread_config.log = &cf->cycle->new_log;
 
     ngx_conf_merge_str_value(conf->ssl_spiffe_sock, prev->ssl_spiffe_sock, "");
     
@@ -366,7 +297,7 @@ ngx_ssl_spiffe_reload_client_certificate(ngx_ssl_t *ngx_ssl, std::string bundle_
     // Set verify methods.
     //
     SSL_CTX_set_verify(ssl->ctx, SSL_VERIFY_PEER, ngx_ssl_verify_callback);
-    SSL_CTX_set_verify_depth(ssl->ctx, ngx_ssl_thread_config.depth);
+    SSL_CTX_set_verify_depth(ssl->ctx, ngx_http_ssl_thread_config.depth);
 
     // Add all CAs into SSL_CTX
     //
@@ -413,7 +344,7 @@ ngx_ssl_spiffe_reload_trusted_certificate(ngx_ssl_t *ngx_ssl, std::string bundle
 
     // Set verify methods.
     //
-    SSL_CTX_set_verify_depth(ssl->ctx, ngx_ssl_thread_config.depth);
+    SSL_CTX_set_verify_depth(ssl->ctx, ngx_http_ssl_thread_config.depth);
     SSL_CTX_set_verify(ssl->ctx, SSL_VERIFY_PEER, ngx_ssl_verify_callback);
     
     // Add all CAs into SSL_CTX
