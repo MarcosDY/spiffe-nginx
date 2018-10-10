@@ -168,7 +168,7 @@ ngx_ssl_spiffe_reload_client_certificates(ngx_ssl_t *ngx_ssl, std::string bundle
 
     // Add all CAs into SSL_CTX
     //
-	ngx_ssl_spiffe_add_all_cas(ssl, bundle_der, config);
+    ngx_ssl_spiffe_add_all_cas(ssl, bundle_der, config);
  
     int len = bundle_der.size();
     buf = (unsigned char *)bundle_der.c_str();
@@ -215,7 +215,7 @@ ngx_ssl_spiffe_reload_trusted_certificates(ngx_ssl_t *ngx_ssl, std::string bundl
     
     // Add all CAs into SSL_CTX
     //
-	ngx_ssl_spiffe_add_all_cas(ssl, bundle_der, config);
+    ngx_ssl_spiffe_add_all_cas(ssl, bundle_der, config);
 
     ERR_clear_error();
 

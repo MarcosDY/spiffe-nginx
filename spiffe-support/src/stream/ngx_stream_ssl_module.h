@@ -47,7 +47,7 @@ typedef struct {
 
     ngx_flag_t       session_tickets;
     ngx_array_t     *session_ticket_keys;
-    ngx_flag_t 		 ssl_spiffe;		
+    ngx_flag_t       ssl_spiffe;
     ngx_array_t 	*ssl_spiffe_accept;
 } ngx_stream_ssl_conf_t;
 
