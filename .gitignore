@@ -1,4 +1,5 @@
 .cache
+.vscode/
 /nginx
 /nginx-*
 workload.grpc.pb.*

@@ -3167,12 +3167,10 @@ ngx_int_t
 ngx_ssl_check_spiffe_id(ngx_connection_t *c, ngx_array_t *accepted)
 {
     int                     n;
-    ngx_uint_t              i;
     X509                    *cert;
     GENERAL_NAME            *sanName;
     ASN1_STRING             *str;
     STACK_OF(GENERAL_NAME)  *san_names = NULL;
-    ngx_str_t               *accepted_elts;
 
     // Get certificate from connection
     //
@@ -3216,14 +3214,11 @@ ngx_ssl_check_spiffe_id(ngx_connection_t *c, ngx_array_t *accepted)
     }
 
     str = sanName->d.dNSName;    
-    accepted_elts = accepted->elts;
     
     // Vefify that the SPIFFE ID is in the accepted list
     //
-    for (i = 0; i < accepted->nelts; i++) {        
-        if (ngx_strcmp(str->data, accepted_elts[i].data) == 0) {
-            goto found;
-        }
+    if (ngx_is_spiffe_id_accepted(str->data, accepted)) {
+        goto found;
     }
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0,
@@ -3275,6 +3270,23 @@ ngx_conf_set_spiffe_accept_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     return NGX_CONF_OK;
 }
+
+ngx_flag_t ngx_is_spiffe_id_accepted(unsigned char *spiffe_id, ngx_array_t *accepted)
+{
+    ngx_flag_t found = 0;
+    ngx_str_t *accepted_elts = accepted->elts;
+
+    for (ngx_uint_t i = 0; i < accepted->nelts; i++) {
+        if (ngx_strcmp(spiffe_id, accepted_elts[i].data) == 0) {
+            found = 1;
+            break;
+        }
+    }
+
+    return found;
+}
+
+
 ngx_int_t
 ngx_ssl_check_host(ngx_connection_t *c, ngx_str_t *name)
 {

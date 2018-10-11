@@ -200,6 +200,13 @@ ngx_int_t ngx_ssl_check_spiffe_id(ngx_connection_t *c, ngx_array_t *accepted);
 char *ngx_conf_set_spiffe_accept_slot(ngx_conf_t *cf, 
     ngx_command_t *cmd, void *conf);
 
+/*
+Given a spiffe ID and a list of accepted spiffe IDs, it will return:
+    1 if the specified ID is in the list
+    0 if the specified ID is not in the list
+*/
+ngx_flag_t ngx_is_spiffe_id_accepted(unsigned char *spiffe_id, ngx_array_t *accepted);
+
 ngx_int_t ngx_ssl_get_protocol(ngx_connection_t *c, ngx_pool_t *pool,
     ngx_str_t *s);
 ngx_int_t ngx_ssl_get_cipher_name(ngx_connection_t *c, ngx_pool_t *pool,
